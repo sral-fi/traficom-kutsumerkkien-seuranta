@@ -4,3 +4,4 @@ requests==2.31.0
 beautifulsoup4==4.12.3
 mysql-connector-python==8.4.0
 python-dotenv==1.0.1
+aiofiles==25.1.0

@@ -13,13 +13,16 @@ Seuraa suomalaisten radioamatöörikutsujen (OF/OG/OH/OI/OJ) muutoksia Traficomi
 ```
 traficom-tracker/
 ├── app.py              # FastAPI-webserveri
-├── fetcher.py          # Hakee Traficomilta ja laskee diifit
-├── db.py               # MariaDB-yhteys ja skeema
+├── fetcher.py          # Hakee Traficomilta kutsumerkkilistan ja laskee päivittäiset erot
+├── db.py               # MariaDB-yhteys ja tietokantarakenne
 ├── requirements.txt
 ├── .env                # Ei repossa – katso .env.example
 ├── .env.example
 └── templates/
     └── index.html      # Dashboard
+    └── style.css       # CSS settings
+    └── font.ttf        # Alternative font
+    └── font.woff       # Alternative font
 ```
 
 ## Asennus
@@ -54,7 +57,9 @@ uvicorn app:app --host 0.0.0.0 --port 8099
 ```
 
 ## Cron
-
+ 
+Webserveri (systemd) pitää dashboardin käynnissä jatkuvasti, mutta se ei itse hae dataa Traficomilta. Tietojen päivitys tapahtuu erillisellä `fetcher.py`-skriptillä, joka ajetaan cronilla kerran vuorokaudessa klo 04:00. Fetcher hakee kutsumerkkilistan Traficomin palvelulta, tallentaa snapshotin tietokantaan ja laskee muutokset edelliseen päivään verrattuna.
+ 
 ```
 0 4 * * * cd /opt/traficom-tracker && /opt/traficom-tracker/venv/bin/python3 fetcher.py >> /var/log/traficom-fetcher.log 2>&1
 ```

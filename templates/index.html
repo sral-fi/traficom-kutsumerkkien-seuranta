@@ -6,208 +6,30 @@
 <title>OF|OG|OH|OI|OJ – Suomalaisten radioamatöörikutsujen seuranta</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
 <style>
-  :root {
-    --bg:       #0d1520;
-    --surface:  #162030;
-    --surface2: #1c2a3a;
-    --border:   #2a3f55;
-    --green:    #2dffb0;
-    --red:      #ff5572;
-    --blue:     #60cdff;
-    --amber:    #ffcc44;
-    --dim:      #6a8aaa;
-    --text:     #ddeeff;
-    --text-dim: #7a9ab8;
-    --mono:     'Share Tech Mono', monospace;
-    --ui:       'Rajdhani', sans-serif;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: var(--bg); color: var(--text);
-    font-family: var(--ui); font-size: 16px;
-    min-height: 100vh; padding-bottom: 60px;
-  }
-  body::before {
-    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
-    background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04) 2px,rgba(0,0,0,.04) 4px);
-  }
-
-  /* Header */
-  header {
-    border-bottom: 1px solid var(--border); padding: 14px 16px;
-    display: flex; align-items: center; gap: 12px; background: var(--surface);
-    flex-wrap: wrap;
-  }
-  header h1 { font-size: .85rem; font-weight:600; letter-spacing:.06em;
-               text-transform:uppercase; color: var(--text-dim); flex:1; min-width:0; }
-  .hdr-right { margin-left:auto; text-align:right; flex-shrink:0; }
-  .hdr-right span { font-family:var(--mono); font-size:.68rem; color:var(--dim); display:block; }
-
-  /* KPI row */
-  .kpi-row {
-    display: grid; grid-template-columns: 1fr 1fr;
-    gap: 1px; background: var(--border); border-bottom: 1px solid var(--border);
-  }
-  .kpi { background:var(--surface); padding:14px 16px; }
-  .kpi:first-child { grid-column: 1 / -1; }
-  .kpi-label { font-size:.62rem; letter-spacing:.12em; text-transform:uppercase;
-               color:var(--text-dim); margin-bottom:4px; }
-  .kpi-value { font-family:var(--mono); font-size:1.7rem; line-height:1; }
-  .kpi-value.c-blue   { color:var(--blue);  text-shadow:0 0 16px rgba(96,205,255,.4); }
-  .kpi-value.c-green  { color:var(--green); text-shadow:0 0 16px rgba(45,255,176,.4); }
-  .kpi-value.c-red    { color:var(--red);   text-shadow:0 0 16px rgba(255,85,114,.4); }
-  .kpi-value.c-amber  { color:var(--amber); text-shadow:0 0 16px rgba(255,204,68,.4); }
-  .kpi-sub { font-size:.62rem; color:var(--dim); margin-top:2px; }
-
-  /* Main */
-  .main { max-width:1200px; margin:16px auto; padding:0 12px; display:grid; gap:14px; }
-  .card { background:var(--surface); border:1px solid var(--border); padding:16px; }
-  .card-header { display:flex; align-items:center; justify-content:space-between;
-                 margin-bottom:14px; flex-wrap:wrap; gap:8px; }
-  .card-title { font-size:.68rem; letter-spacing:.15em; text-transform:uppercase; color:var(--text-dim); }
-
-  /* Daily status */
-  .daily-status {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
-    background: var(--border);
-  }
-  .ds-half { background: var(--surface2); padding: 14px 16px; }
-  .ds-label { font-size:.62rem; letter-spacing:.12em; text-transform:uppercase;
-              color:var(--text-dim); margin-bottom:8px; }
-  .ds-list  { display:flex; flex-direction:column; gap:5px; max-height:160px; overflow-y:auto;
-              -webkit-overflow-scrolling:touch; }
-  .ds-list::-webkit-scrollbar { width:3px; }
-  .ds-list::-webkit-scrollbar-thumb { background:var(--border); }
-  .ds-item  { font-family:var(--mono); font-size:.8rem; display:flex; align-items:center; gap:6px; }
-  .ds-item.added   { color:var(--green); }
-  .ds-item.removed { color:var(--red); }
-  .ds-empty { font-family:var(--mono); font-size:.75rem; color:var(--dim); padding:2px 0; }
-  .ds-tag   { font-size:.56rem; letter-spacing:.06em; padding:1px 5px; border-radius:2px;
-              text-transform:uppercase; flex-shrink:0; }
-  .ds-tag-new     { background:rgba(45,255,176,.1);  color:var(--green); border:1px solid rgba(45,255,176,.25); }
-  .ds-tag-renewal { background:rgba(255,204,68,.1);  color:var(--amber); border:1px solid rgba(255,204,68,.25); }
-  .ds-tag-genuine { background:rgba(255,85,114,.1);  color:var(--red);   border:1px solid rgba(255,85,114,.25); }
-  .ds-tag-pending { background:rgba(106,138,170,.1); color:var(--dim);   border:1px solid rgba(106,138,170,.25); }
-
-  /* Search */
-  .search-wrap { display:flex; gap:8px; align-items:stretch; }
-  .search-input {
-    flex:1; min-width:0;
-    background: var(--surface2); border: 1px solid var(--border);
-    color: var(--text); font-family: var(--mono); font-size: 1rem;
-    padding: 11px 14px; outline: none; letter-spacing: .08em;
-    text-transform: uppercase; transition: border-color .15s;
-    -webkit-appearance: none; border-radius: 0;
-  }
-  .search-input::placeholder { color: var(--dim); text-transform: none; letter-spacing: 0; }
-  .search-input:focus { border-color: var(--blue); }
-  .search-btn {
-    background: rgba(96,205,255,.1); border: 1px solid var(--blue);
-    color: var(--blue); font-family: var(--mono); font-size: .8rem;
-    padding: 11px 18px; cursor: pointer; letter-spacing: .1em;
-    text-transform: uppercase; transition: all .15s; flex-shrink:0;
-    -webkit-appearance: none; border-radius: 0; touch-action: manipulation;
-  }
-  .search-btn:active { background: rgba(96,205,255,.25); }
-  .search-result {
-    margin-top: 12px; padding: 14px 16px;
-    border: 1px solid var(--border); background: var(--surface2);
-    font-family: var(--mono); font-size: .82rem; display: none;
-  }
-  .search-result.visible { display: block; }
-  .sr-callsign { font-size: 1.3rem; color: var(--blue); letter-spacing: .1em; margin-bottom: 10px; }
-  .sr-row { display:flex; gap:8px; margin-bottom:5px; font-size:.75rem; flex-wrap:wrap; }
-  .sr-label { color: var(--dim); min-width: 120px; }
-  .sr-value { color: var(--text); }
-  .sr-value.active   { color: var(--green); }
-  .sr-value.inactive { color: var(--red); }
-  .sr-value.pending  { color: var(--amber); }
-  .sr-not-found { color: var(--red); font-size: .82rem; }
-  .sr-changes { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
-  .sr-changes-title { font-size: .62rem; letter-spacing: .12em; text-transform: uppercase;
-                      color: var(--dim); margin-bottom: 8px; }
-  .sr-change-row { display:flex; gap:8px; font-size:.72rem; padding:4px 0;
-                   border-bottom: 1px solid rgba(42,63,85,.4); }
-  .sr-change-row:last-child { border-bottom: none; }
-
-  /* Tabs / toggles */
-  .tabs { display:flex; gap:4px; flex-wrap:wrap; }
-  .tabs button {
-    background:none; border:1px solid var(--border); color:var(--text-dim);
-    font-family:var(--mono); font-size:.68rem; padding:5px 10px; cursor:pointer;
-    transition:all .15s; touch-action:manipulation;
-  }
-  .tabs button:active, .tabs button.active {
-    border-color:var(--blue); color:var(--blue); background:rgba(96,205,255,.08);
-  }
-  .tab-group { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .view-toggle { display:flex; border:1px solid var(--border); overflow:hidden; }
-  .view-toggle button {
-    background:none; border:none; color:var(--text-dim); font-family:var(--mono);
-    font-size:.66rem; padding:5px 12px; cursor:pointer; transition:all .15s; touch-action:manipulation;
-  }
-  .view-toggle button.active { background:rgba(96,205,255,.12); color:var(--blue); }
-  .view-toggle button + button { border-left:1px solid var(--border); }
-
-  /* Charts */
-  .chart-wrap { position:relative; height:200px; }
-
-  /* Changes table */
-  .changes-grid { display:grid; grid-template-columns:1fr; gap:16px; }
-  .change-section h3 { font-size:.66rem; letter-spacing:.12em; text-transform:uppercase;
-                       margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
-  .change-section.added   h3 { color:var(--green); }
-  .change-section.removed h3 { color:var(--red); }
-  .scroll-table { max-height:260px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
-  .scroll-table::-webkit-scrollbar { width:3px; }
-  .scroll-table::-webkit-scrollbar-track { background:var(--bg); }
-  .scroll-table::-webkit-scrollbar-thumb { background:var(--border); }
-  table { width:100%; border-collapse:collapse; }
-  th { text-align:left; font-size:.62rem; letter-spacing:.08em; text-transform:uppercase;
-       color:var(--dim); padding:0 6px 8px; border-bottom:1px solid var(--border); }
-  td { padding:5px 6px; border-bottom:1px solid rgba(42,63,85,.4); font-family:var(--mono); font-size:.76rem; }
-  td.cs-added   { color:var(--green); }
-  td.cs-removed { color:var(--red); }
-  td.dt { color:var(--dim); font-size:.68rem; }
-  .tag { display:inline-block; padding:1px 5px; font-size:.58rem;
-         letter-spacing:.06em; text-transform:uppercase; border-radius:2px; }
-  .tag-new     { background:rgba(45,255,176,.1);  color:var(--green); border:1px solid rgba(45,255,176,.25); }
-  .tag-renewal { background:rgba(255,204,68,.1);  color:var(--amber); border:1px solid rgba(255,204,68,.25); }
-  .tag-genuine { background:rgba(255,85,114,.1);  color:var(--red);   border:1px solid rgba(255,85,114,.25); }
-  .tag-pending { background:rgba(106,138,170,.1); color:var(--dim);   border:1px solid rgba(106,138,170,.25); }
-  .legend { display:flex; gap:12px; flex-wrap:wrap; margin-top:10px; }
-  .legend-item { display:flex; align-items:center; gap:5px; font-size:.68rem; color:var(--dim); }
-  .legend-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
-  .empty { color:var(--dim); font-family:var(--mono); font-size:.76rem; padding:12px 6px; }
-  .dot-anim::after { content:''; animation:dots 1.2s steps(4,end) infinite; }
-  @keyframes dots { 0%{content:''} 25%{content:'.'} 50%{content:'..'} 75%{content:'...'} }
-
-  /* Desktop overrides */
-  @media (min-width: 700px) {
-    header { padding: 20px 32px; gap: 20px; }
-    header h1 { font-size: 1rem; }
-    .kpi-row { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
-    .kpi:first-child { grid-column: auto; }
-    .kpi { padding: 18px 24px; }
-    .kpi-value { font-size: 2rem; }
-    .main { margin: 28px auto; padding: 0 20px; gap: 20px; }
-    .card { padding: 22px; }
-    .chart-wrap { height: 250px; }
-    .changes-grid { grid-template-columns: 1fr 1fr; }
-    .scroll-table { max-height: 320px; }
-    .ds-list { max-height: 200px; }
-  }
+@font-face {
+  font-family: 'pIqaD';
+  src: url('/static/font.woff') format('woff'),
+       url('/static/font.ttf') format('truetype');
+  font-weight: normal; font-style: normal;
+}
 </style>
 </head>
 <body>
 
 <header>
-  <h1><span style="color:var(--green);font-family:var(--mono);font-size:1.4rem;letter-spacing:.1em;text-shadow:0 0 18px rgba(45,255,176,.5)">OF|OG|OH|OI|OJ</span> – Suomalaisten radioamatöörikutsujen seuranta</h1>
-  <div class="hdr-right">
-    <span id="lastUpdate">Ladataan<span class="dot-anim"></span></span>
-    <span>Lähde: Traficom · päivitetään klo 04:00</span>
+  <div class="hdr-top">
+    <h1>
+      <span style="color:var(--green);font-family:var(--mono);font-size:1.1rem;letter-spacing:.1em;text-shadow:0 0 18px rgba(45,255,176,.5)">OF|OG|OH|OI|OJ</span>
+      Suomalaisten radioamatöörikutsujen seuranta
+    </h1>
+    <div class="hdr-right">
+      <span id="lastUpdate">Ladataan<span class="dot-anim"></span></span>
+      <span>Lähde: Traficom · klo 04:00</span>
+    </div>
   </div>
 </header>
 
@@ -341,7 +163,7 @@
 <script>
 Chart.defaults.color       = '#7a9ab8';
 Chart.defaults.borderColor = '#2a3f55';
-Chart.defaults.font.family = "'Share Tech Mono', monospace";
+Chart.defaults.font.family = "'JetBrains Mono', monospace";
 Chart.defaults.font.size   = 11;
 
 const C = { green:'#2dffb0', red:'#ff5572', blue:'#60cdff', amber:'#ffcc44' };
@@ -444,8 +266,14 @@ async function loadCharts(days, view) {
   chartDelta = new Chart(document.getElementById('chartDelta'), {
     type: 'bar',
     data: { labels, datasets: [
-      { label:'Lisätyt',   data:added,   backgroundColor:'rgba(45,255,176,.55)', borderWidth:0, borderRadius:2 },
-      { label:'Poistetut', data:removed, backgroundColor:'rgba(255,85,114,.55)', borderWidth:0, borderRadius:2 }
+      { label:'Lisätyt',   data:added,
+        backgroundColor:'rgba(45,255,176,.55)', borderWidth:0,
+        borderRadius:{ topLeft:2, topRight:2, bottomLeft:0, bottomRight:0 },
+        stack:'same', barPercentage:0.8, categoryPercentage:0.9 },
+      { label:'Poistetut', data:removed,
+        backgroundColor:'rgba(255,85,114,.55)', borderWidth:0,
+        borderRadius:{ topLeft:0, topRight:0, bottomLeft:2, bottomRight:2 },
+        stack:'same', barPercentage:0.8, categoryPercentage:0.9 }
     ]},
     options: {
       responsive:true, maintainAspectRatio:false,
@@ -455,8 +283,8 @@ async function loadCharts(days, view) {
           callbacks:{ label: ctx => ctx.dataset.label + ': ' + Math.abs(ctx.raw) } }
       },
       scales:{
-        x:{ grid:{color:'#1e2e40'}, ticks:{maxTicksLimit:10} },
-        y:{ grid:{color:'#1e2e40'}, ticks:{callback:v=>Math.abs(v)} }
+        x:{ grid:{color:'#1e2e40'}, ticks:{maxTicksLimit:10}, stacked:true },
+        y:{ grid:{color:'#1e2e40'}, ticks:{ callback: v => Math.abs(v) }, stacked:false }
       }
     }
   });
@@ -501,7 +329,7 @@ const CAT_LABEL = {
 
 async function doSearch() {
   const q = document.getElementById('searchInput').value.trim();
-  if (!q) return;
+  if (!q || q.length < 3 || q.length > 12) return;
   const box = document.getElementById('searchResult');
   box.className = 'search-result visible';
   box.innerHTML = '<span style="color:var(--dim);font-family:var(--mono);font-size:.8rem">Haetaan<span class="dot-anim"></span></span>';
@@ -520,6 +348,11 @@ async function doSearch() {
     const dateRow = d.active
       ? `<div class="sr-row"><span class="sr-label">Tieto päivältä</span><span class="sr-value">${d.snapshot_date || '–'}</span></div>`
       : `<div class="sr-row"><span class="sr-label">Poistettu</span><span class="sr-value inactive">${d.removed_date || '–'}</span></div>`;
+
+    const firstSeenNote = d.first_seen
+      ? `<div class="sr-row"><span class="sr-label">Nähty 1. kerran</span><span class="sr-value">${d.first_seen}</span></div>
+         <div class="sr-note">⚠ Ensimmäinen havainto seurantadatassa. Kutsut jotka ovat olleet voimassa ennen seurannan alkua eivät välttämättä näy oikealla päivämäärällä.</div>`
+      : `<div class="sr-note">⚠ Ensimmäisen havainnon päivä ei ole tiedossa — kutsumerkki on ollut listalla ennen seurannan alkua.</div>`;
 
     let changesHtml = '';
     if (d.changes && d.changes.length) {
@@ -543,6 +376,7 @@ async function doSearch() {
       <div class="sr-callsign">${d.callsign}</div>
       <div class="sr-row"><span class="sr-label">Tila</span><span class="sr-value ${statusInfo.cls}">${statusInfo.text}</span></div>
       ${dateRow}
+      ${firstSeenNote}
       ${changesHtml}
     `;
   } catch(e) {
@@ -579,6 +413,252 @@ document.getElementById('logViewToggle').addEventListener('click', e => {
   logView = b.dataset.view;
   loadChanges(logView);
 });
+
+
+/* ── Easter eggs ── */
+
+// pIqaD muunnostaulukko (latinalainen → pIqaD Unicode PUA)
+// Lähde: CSUR U+F8D0–U+F8FF
+const PIQAD = {
+  "A":"\uF8D0", "B":"\uF8D1", "CH":"\uF8D2", "D":"\uF8D3", "E":"\uF8D4",
+  "GH":"\uF8D5", "H":"\uF8D6", "I":"\uF8D7", "J":"\uF8D8", "L":"\uF8D9",
+  "M":"\uF8DA", "N":"\uF8DB", "NG":"\uF8DC", "O":"\uF8DD", "P":"\uF8DE",
+  "Q":"\uF8DF", "QH":"\uF8E0", "R":"\uF8E1", "S":"\uF8E2", "T":"\uF8E3",
+  "TLH":"\uF8E4", "U":"\uF8E5", "V":"\uF8E6", "W":"\uF8E7", "Y":"\uF8E8",
+  "TLHH":"\uF8E9",
+  "0":"\uF8F0", "1":"\uF8F1", "2":"\uF8F2", "3":"\uF8F3", "4":"\uF8F4",
+  "5":"\uF8F5", "6":"\uF8F6", "7":"\uF8F7", "8":"\uF8F8", "9":"\uF8F9",
+};
+
+function toPIqaD(text) {
+  let result = '';
+  let i = 0;
+  const t = text.toUpperCase();
+  while (i < t.length) {
+    // Kokeile 3-kirjaimiset ensin (TLH)
+    if (i+3 <= t.length && PIQAD[t.slice(i,i+3)]) {
+      result += PIQAD[t.slice(i,i+3)]; i+=3;
+    } else if (i+2 <= t.length && PIQAD[t.slice(i,i+2)]) {
+      result += PIQAD[t.slice(i,i+2)]; i+=2;
+    } else if (PIQAD[t[i]]) {
+      result += PIQAD[t[i]]; i++;
+    } else {
+      result += t[i]; i++;
+    }
+  }
+  return result;
+}
+
+let klingonActive = false;
+
+function klingonifyCallsigns() {
+  const CALLSIGN_RE2 = /\b(O[FGHIJ]\d[A-Z0-9]{1,4})\b/g;
+  document.querySelectorAll('body *:not(script):not(style):not(input):not(button):not(canvas)').forEach(el => {
+    Array.from(el.childNodes).forEach(node => {
+      if (node.nodeType !== Node.TEXT_NODE) return;
+      const text = node.textContent;
+      CALLSIGN_RE2.lastIndex = 0;
+      if (!CALLSIGN_RE2.test(text)) return;
+      CALLSIGN_RE2.lastIndex = 0;
+      const frag = document.createDocumentFragment();
+      let last = 0, m;
+      while ((m = CALLSIGN_RE2.exec(text)) !== null) {
+        if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+        const span = document.createElement('span');
+        span.className = 'klingon-call';
+        span.title = m[1];
+        span.style.cssText = "font-family:'pIqaD',monospace;font-size:1.1em;color:var(--amber);text-shadow:0 0 10px rgba(255,204,68,.5);letter-spacing:.05em";
+        span.textContent = toPIqaD(m[1]);
+        frag.appendChild(span);
+        last = m.index + m[0].length;
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    });
+  });
+}
+
+function deKlingonifyCallsigns() {
+  document.querySelectorAll('.klingon-call').forEach(el => {
+    el.replaceWith(document.createTextNode(el.title));
+  });
+}
+
+function activateKlingon() {
+  if (klingonActive) return;
+  klingonActive = true;
+  klingonifyCallsigns();
+  const banner = document.createElement('div');
+  banner.id = 'klingon-banner';
+  banner.style.cssText = "position:fixed;bottom:20px;right:20px;background:#1a0a00;color:var(--amber);" +
+    "font-family:'pIqaD',monospace;font-size:1.4rem;padding:12px 20px;border:1px solid var(--amber);" +
+    "z-index:99999;box-shadow:0 0 16px rgba(255,204,68,.4);letter-spacing:.1em";
+  banner.title = "nuqneH!";
+  banner.textContent = toPIqaD("NUQNEH");
+  document.body.appendChild(banner);
+  setTimeout(() => banner.remove(), 3000);
+}
+
+function deactivateKlingon() {
+  if (!klingonActive) return;
+  klingonActive = false;
+  deKlingonifyCallsigns();
+  document.getElementById('klingon-banner')?.remove();
+}
+
+
+const MORSE = {
+  A:'·-', B:'-···', C:'-·-·', D:'-··', E:'·', F:'··-·',
+  G:'--·', H:'····', I:'··', J:'·---', K:'-·-', L:'·-··',
+  M:'--', N:'-·', O:'---', P:'·--·', Q:'--·-', R:'·-·',
+  S:'···', T:'-', U:'··-', V:'···-', W:'·--', X:'-··-',
+  Y:'-·--', Z:'--··',
+  '0':'-----', '1':'·----', '2':'··---', '3':'···--', '4':'····-',
+  '5':'·····', '6':'-····', '7':'--···', '8':'---··', '9':'----·',
+  '.':'·-·-·-', ',':'--··--', '?':'··--··', '/':'-··-·',
+  ' ': ' / '
+};
+
+function toMorse(text) {
+  return text.toUpperCase().split('').map(c => MORSE[c] || c).join(' ');
+}
+
+function morseifyNode(node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    if (node.textContent.trim()) node.textContent = toMorse(node.textContent);
+  } else if (node.nodeType === Node.ELEMENT_NODE) {
+    const tag = node.tagName;
+    if (['SCRIPT','STYLE','INPUT','BUTTON','CANVAS'].includes(tag)) return;
+    node.childNodes.forEach(morseifyNode);
+  }
+}
+
+let morseActive = false;
+let comicActive = false;
+let originalHTML = null;
+
+// Kutsumerkit tunnistava regex: OF/OG/OH/OI/OJ + numero + kirjaimet
+const CALLSIGN_RE = /\b(O[FGHIJ]\d[A-Z0-9]{1,4})\b/g;
+
+function morseifyCallsigns(node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent;
+    if (!CALLSIGN_RE.test(text)) return;
+    CALLSIGN_RE.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0, m;
+    while ((m = CALLSIGN_RE.exec(text)) !== null) {
+      if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+      const span = document.createElement('span');
+      span.className = 'morse-call';
+      span.title = m[1];
+      span.style.cssText = 'font-family:var(--mono);letter-spacing:.08em;color:inherit';
+      span.textContent = toMorse(m[1]);
+      frag.appendChild(span);
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    node.parentNode.replaceChild(frag, node);
+  } else if (node.nodeType === Node.ELEMENT_NODE) {
+    if (['SCRIPT','STYLE','INPUT','BUTTON','CANVAS'].includes(node.tagName)) return;
+    if (node.classList.contains('morse-call')) return;
+    Array.from(node.childNodes).forEach(morseifyCallsigns);
+  }
+}
+
+function activateMorse() {
+  if (morseActive) return;
+  morseActive = true;
+  morseifyCallsigns(document.body);
+}
+
+function deactivateMorse() {
+  if (!morseActive) return;
+  morseActive = false;
+  // Palauta kutsumerkit alkuperäisiksi title-attribuutista
+  document.querySelectorAll('.morse-call').forEach(el => {
+    el.replaceWith(document.createTextNode(el.title));
+  });
+}
+
+function activateComic() {
+  if (comicActive) return;
+  comicActive = true;
+  document.body.style.fontFamily = "'Comic Sans MS', 'Comic Sans', cursive";
+  document.querySelectorAll('*').forEach(el => {
+    el.style.fontFamily = "'Comic Sans MS', 'Comic Sans', cursive";
+  });
+  // Lisätään söpö ilmoitus
+  const banner = document.createElement('div');
+  banner.id = 'comic-banner';
+  banner.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#ff69b4;color:#fff;' +
+    'font-family:Comic Sans MS,cursive;font-size:1.1rem;padding:12px 20px;border-radius:12px;' +
+    'z-index:99999;box-shadow:3px 3px 0 #c0392b;transform:rotate(-2deg)';
+  banner.textContent = '✨ Comic Sans aktivoitu! ✨';
+  document.body.appendChild(banner);
+  setTimeout(() => banner.remove(), 3000);
+}
+
+function deactivateComic() {
+  if (!comicActive) return;
+  comicActive = false;
+  document.body.style.fontFamily = '';
+  document.querySelectorAll('*').forEach(el => el.style.fontFamily = '');
+  document.getElementById('comic-banner')?.remove();
+}
+
+const _origDoSearch = doSearch;
+doSearch = async function() {
+  const q = document.getElementById('searchInput').value.trim().toUpperCase();
+  if (q === 'CW4EVER') {
+    if (morseActive) { deactivateMorse(); }
+    else             { activateMorse();  }
+    return;
+  }
+  if (q === 'C0MIC') {
+    if (comicActive) { deactivateComic(); }
+    else             { activateComic();   }
+    return;
+  }
+  if (q === 'KL1NGON') {
+    if (klingonActive) { deactivateKlingon(); }
+    else               { activateKlingon();   }
+    return;
+  }
+  // Deaktivoi easter eggit normaalihaussa
+  if (morseActive)   deactivateMorse();
+  if (comicActive)   deactivateComic();
+  if (klingonActive) deactivateKlingon();
+  return _origDoSearch();
+};
+
+function rebindEvents() {
+  document.getElementById('searchBtn')?.addEventListener('click', doSearch);
+  document.getElementById('searchInput')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') doSearch();
+  });
+  document.getElementById('rangeTabs')?.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#rangeTabs button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    currentDays = parseInt(b.dataset.days);
+    loadCharts(currentDays, currentView);
+  });
+  document.getElementById('viewToggle')?.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#viewToggle button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    currentView = b.dataset.view;
+    loadCharts(currentDays, currentView);
+  });
+  document.getElementById('logViewToggle')?.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#logViewToggle button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    logView = b.dataset.view;
+    loadChanges(logView);
+  });
+}
 
 /* Init */
 loadSummary();

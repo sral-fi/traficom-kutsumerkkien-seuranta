@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { fetchSummary, fetchStats, fetchChanges } from './api'
+import { useLocale } from './i18n'
 import KpiRow from './components/KpiRow'
 import DailyStatus from './components/DailyStatus'
 import SearchCard from './components/SearchCard'
@@ -19,12 +20,12 @@ const PIQAD = {
 
 function toPIqaD(text) {
   let result = '', i = 0
-  const t = text.toUpperCase()
-  while (i < t.length) {
-    if (i + 3 <= t.length && PIQAD[t.slice(i, i + 3)]) { result += PIQAD[t.slice(i, i + 3)]; i += 3 }
-    else if (i + 2 <= t.length && PIQAD[t.slice(i, i + 2)]) { result += PIQAD[t.slice(i, i + 2)]; i += 2 }
-    else if (PIQAD[t[i]]) { result += PIQAD[t[i]]; i++ }
-    else { result += t[i]; i++ }
+  const s = text.toUpperCase()
+  while (i < s.length) {
+    if (i + 3 <= s.length && PIQAD[s.slice(i, i + 3)]) { result += PIQAD[s.slice(i, i + 3)]; i += 3 }
+    else if (i + 2 <= s.length && PIQAD[s.slice(i, i + 2)]) { result += PIQAD[s.slice(i, i + 2)]; i += 2 }
+    else if (PIQAD[s[i]]) { result += PIQAD[s[i]]; i++ }
+    else { result += s[i]; i++ }
   }
   return result
 }
@@ -33,6 +34,11 @@ const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRi
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
+  const { locale, setLocale, t } = useLocale()
+
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem('theme') ?? 'dark'
+  )
   const [summary, setSummary]         = useState(null)
   const [stats, setStats]             = useState([])
   const [changes, setChanges]         = useState([])
@@ -41,7 +47,15 @@ export default function App() {
   const [logView, setLogView]         = useState('clean')
   const [klingon, setKlingon]         = useState(false)
 
-  // Konami code detector
+  // Apply theme attribute to <html> so CSS vars override works
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => setTheme((th) => (th === 'dark' ? 'light' : 'dark'))
+
+  // Konami code → Klingon mode
   const konamiBuf = useRef([])
   useEffect(() => {
     const handler = (e) => {
@@ -56,37 +70,49 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  useEffect(() => {
-    fetchSummary().then(setSummary).catch(console.error)
-  }, [])
-
-  useEffect(() => {
-    fetchStats(currentDays, currentView).then(setStats).catch(console.error)
-  }, [currentDays, currentView])
-
-  useEffect(() => {
-    fetchChanges(30, 'all', logView).then(setChanges).catch(console.error)
-  }, [logView])
+  useEffect(() => { fetchSummary().then(setSummary).catch(console.error) }, [])
+  useEffect(() => { fetchStats(currentDays, currentView).then(setStats).catch(console.error) }, [currentDays, currentView])
+  useEffect(() => { fetchChanges(30, 'all', logView).then(setChanges).catch(console.error) }, [logView])
 
   const lastUpdate = summary?.latest?.stat_date
-    ? 'Päivitetty: ' + summary.latest.stat_date
-    : 'Ladataan\u2026'
-
-  // Optionally wrap callsigns in pIqaD when klingon is active
-  // (applied as a CSS class on body, font loaded separately if available)
-  const klingonClass = klingon ? ' klingon-mode' : ''
+    ? t('header.updated', { date: summary.latest.stat_date })
+    : t('header.loading')
 
   return (
-    <div className={klingonClass}>
+    <>
       <header>
         <div className="hdr-top">
           <h1>
-            <span className="hdr-prefix">{klingon ? toPIqaD('OF OG OH OI OJ') : 'OF|OG|OH|OI|OJ'}</span>
-            {klingon ? toPIqaD('Suomalaisten radioamatoorikutsujen seuranta') : 'Suomalaisten radioamatöörikutsujen seuranta'}
+            <span className="hdr-prefix">
+              {klingon ? toPIqaD('OF OG OH OI OJ') : t('header.prefix')}
+            </span>
+            {klingon
+              ? toPIqaD('Suomalaisten radioamatoorikutsujen seuranta')
+              : t('header.title')}
           </h1>
           <div className="hdr-right">
+            <div className="hdr-controls">
+              <div className="lang-toggle">
+                {['fi', 'sv', 'en'].map((l) => (
+                  <button
+                    key={l}
+                    className={locale === l ? 'active' : ''}
+                    onClick={() => setLocale(l)}
+                  >
+                    {l.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <button
+                className="theme-btn"
+                onClick={toggleTheme}
+                title={theme === 'dark' ? t('theme.day') : t('theme.night')}
+              >
+                {theme === 'dark' ? '☀' : '🌙'}
+              </button>
+            </div>
             <span>{lastUpdate}</span>
-            <span>Lähde: Traficom · klo 04:00</span>
+            <span>{t('header.source')}</span>
           </div>
         </div>
       </header>
@@ -102,6 +128,7 @@ export default function App() {
           currentView={currentView}
           onDaysChange={setCurrentDays}
           onViewChange={setCurrentView}
+          theme={theme}
         />
         <ChangeLog
           changes={changes}
@@ -121,6 +148,6 @@ export default function App() {
           {toPIqaD('NUQNEH')}
         </div>
       )}
-    </div>
+    </>
   )
 }

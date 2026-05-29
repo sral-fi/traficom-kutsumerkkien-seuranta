@@ -9,20 +9,23 @@ import {
   Tooltip,
 } from 'chart.js'
 import { Line, Bar } from 'react-chartjs-2'
+import { useLocale } from '../i18n'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Filler, Tooltip)
 
-ChartJS.defaults.color       = '#7a9ab8'
-ChartJS.defaults.borderColor = '#2a3f55'
 ChartJS.defaults.font.family = "'JetBrains Mono', monospace"
 ChartJS.defaults.font.size   = 11
 
-const C = { green: '#2dffb0', red: '#ff5572', blue: '#60cdff' }
-
 const RANGE_DAYS = [30, 90, 180, 365]
-const RANGE_LABELS = { 30: '30 pv', 90: '90 pv', 180: '180 pv', 365: '1 v' }
 
-export default function Charts({ stats, currentDays, currentView, onDaysChange, onViewChange }) {
+export default function Charts({ stats, currentDays, currentView, onDaysChange, onViewChange, theme }) {
+  const { t } = useLocale()
+
+  // Theme-aware palette
+  const C = theme === 'light'
+    ? { green: '#006e48', red: '#bf1f3c', blue: '#025fa0', gridLine: '#ccd9e8', tickColor: '#4a6a86', tooltipBg: '#ffffff' }
+    : { green: '#2dffb0', red: '#ff5572', blue: '#60cdff', gridLine: '#1e2e40', tickColor: '#7a9ab8', tooltipBg: '#162030' }
+
   const labels  = stats.map((r) => r.stat_date)
   const totals  = stats.map((r) => r.total)
   const added   = stats.map((r) => r.display_added)
@@ -31,10 +34,10 @@ export default function Charts({ stats, currentDays, currentView, onDaysChange, 
   const totalData = {
     labels,
     datasets: [{
-      label: 'Yhteensä',
+      label: t('charts.totalTitle'),
       data: totals,
       borderColor: C.blue,
-      backgroundColor: 'rgba(96,205,255,.08)',
+      backgroundColor: theme === 'light' ? 'rgba(2,95,160,.08)' : 'rgba(96,205,255,.08)',
       borderWidth: 1.5,
       pointRadius: 0,
       pointHoverRadius: 4,
@@ -48,11 +51,24 @@ export default function Charts({ stats, currentDays, currentView, onDaysChange, 
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
-      tooltip: { mode: 'index', intersect: false },
+      tooltip: {
+        mode: 'index', intersect: false,
+        backgroundColor: C.tooltipBg,
+        titleColor: C.tickColor,
+        bodyColor: C.blue,
+        borderColor: C.gridLine,
+        borderWidth: 1,
+      },
     },
     scales: {
-      x: { grid: { color: '#1e2e40' }, ticks: { maxTicksLimit: 10 } },
-      y: { grid: { color: '#1e2e40' }, ticks: { callback: (v) => String(v) } },
+      x: {
+        grid: { color: C.gridLine },
+        ticks: { maxTicksLimit: 10, color: C.tickColor },
+      },
+      y: {
+        grid: { color: C.gridLine },
+        ticks: { callback: (v) => String(v), color: C.tickColor },
+      },
     },
   }
 
@@ -60,9 +76,9 @@ export default function Charts({ stats, currentDays, currentView, onDaysChange, 
     labels,
     datasets: [
       {
-        label: 'Lisätyt',
+        label: t('charts.datasetAdded'),
         data: added,
-        backgroundColor: 'rgba(45,255,176,.55)',
+        backgroundColor: theme === 'light' ? 'rgba(0,110,72,.55)' : 'rgba(45,255,176,.55)',
         borderWidth: 0,
         borderRadius: { topLeft: 2, topRight: 2, bottomLeft: 0, bottomRight: 0 },
         stack: 'same',
@@ -70,9 +86,9 @@ export default function Charts({ stats, currentDays, currentView, onDaysChange, 
         categoryPercentage: 0.9,
       },
       {
-        label: 'Poistetut',
+        label: t('charts.datasetRemoved'),
         data: removed,
-        backgroundColor: 'rgba(255,85,114,.55)',
+        backgroundColor: theme === 'light' ? 'rgba(191,31,60,.55)' : 'rgba(255,85,114,.55)',
         borderWidth: 0,
         borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 2, bottomRight: 2 },
         stack: 'same',
@@ -90,21 +106,28 @@ export default function Charts({ stats, currentDays, currentView, onDaysChange, 
       tooltip: {
         mode: 'index',
         intersect: false,
+        backgroundColor: C.tooltipBg,
+        titleColor: C.tickColor,
+        bodyColor: C.tickColor,
+        borderColor: C.gridLine,
+        borderWidth: 1,
         callbacks: { label: (ctx) => ctx.dataset.label + ': ' + Math.abs(ctx.raw) },
       },
     },
     scales: {
-      x: { grid: { color: '#1e2e40' }, ticks: { maxTicksLimit: 10 }, stacked: true },
-      y: { grid: { color: '#1e2e40' }, ticks: { callback: (v) => Math.abs(v) }, stacked: false },
+      x: { grid: { color: C.gridLine }, ticks: { maxTicksLimit: 10, color: C.tickColor }, stacked: true },
+      y: { grid: { color: C.gridLine }, ticks: { callback: (v) => Math.abs(v), color: C.tickColor }, stacked: false },
     },
   }
+
+  const rangeLabelKey = { 30: 'charts.range30', 90: 'charts.range90', 180: 'charts.range180', 365: 'charts.range365' }
 
   return (
     <>
       {/* Total trend */}
       <div className="card">
         <div className="card-header">
-          <div className="card-title">Kutsumerkkien kokonaismäärä</div>
+          <div className="card-title">{t('charts.totalTitle')}</div>
           <div className="tab-group">
             <div className="tabs">
               {RANGE_DAYS.map((d) => (
@@ -113,7 +136,7 @@ export default function Charts({ stats, currentDays, currentView, onDaysChange, 
                   className={currentDays === d ? 'active' : ''}
                   onClick={() => onDaysChange(d)}
                 >
-                  {RANGE_LABELS[d]}
+                  {t(rangeLabelKey[d])}
                 </button>
               ))}
             </div>
@@ -127,11 +150,11 @@ export default function Charts({ stats, currentDays, currentView, onDaysChange, 
       {/* Daily delta */}
       <div className="card">
         <div className="card-header">
-          <div className="card-title">Päivittäiset muutokset</div>
+          <div className="card-title">{t('charts.deltaTitle')}</div>
           <div className="tab-group">
             <div className="view-toggle">
-              <button className={currentView === 'clean' ? 'active' : ''} onClick={() => onViewChange('clean')}>Siivottu</button>
-              <button className={currentView === 'raw'   ? 'active' : ''} onClick={() => onViewChange('raw')}>Raakadata</button>
+              <button className={currentView === 'clean' ? 'active' : ''} onClick={() => onViewChange('clean')}>{t('charts.viewClean')}</button>
+              <button className={currentView === 'raw'   ? 'active' : ''} onClick={() => onViewChange('raw')}>{t('charts.viewRaw')}</button>
             </div>
           </div>
         </div>
@@ -141,16 +164,16 @@ export default function Charts({ stats, currentDays, currentView, onDaysChange, 
         <div className="legend">
           <div className="legend-item">
             <div className="legend-dot" style={{ background: 'var(--green)' }} />
-            Uudet / lisätyt
+            {t('charts.legendAdded')}
           </div>
           <div className="legend-item">
             <div className="legend-dot" style={{ background: 'var(--red)' }} />
-            Poistetut (vahvistettu)
+            {t('charts.legendRemoved')}
           </div>
           {currentView === 'raw' && (
             <div className="legend-item">
               <div className="legend-dot" style={{ background: 'var(--amber)' }} />
-              Raaka – sisältää renewalit
+              {t('charts.legendRaw')}
             </div>
           )}
         </div>

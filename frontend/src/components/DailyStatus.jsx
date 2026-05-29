@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { fetchChanges } from '../api'
+import { useLocale } from '../i18n'
 
 const TAG_CLS = {
   new:            'ds-tag ds-tag-new',
@@ -7,17 +8,12 @@ const TAG_CLS = {
   genuine_remove: 'ds-tag ds-tag-genuine',
   pending:        'ds-tag ds-tag-pending',
 }
-const TAG_LABEL = {
-  new:            'uusi',
-  renewal:        'uusinta',
-  genuine_remove: 'poistettu',
-  pending:        'odottaa',
-}
 
 export default function DailyStatus() {
-  const [title, setTitle]   = useState('Päivän muutokset')
-  const [added, setAdded]   = useState(null)
-  const [removed, setRemoved] = useState(null)
+  const { t } = useLocale()
+  const [titleDate, setTitleDate] = useState(null)   // null = loading
+  const [added, setAdded]         = useState(null)
+  const [removed, setRemoved]     = useState(null)
 
   useEffect(() => {
     fetchChanges(2, 'all', 'raw')
@@ -28,7 +24,7 @@ export default function DailyStatus() {
           return
         }
         const latestDate = data[0].change_date
-        setTitle('Päivän muutokset – ' + latestDate)
+        setTitleDate(latestDate)
         const today = data.filter((r) => r.change_date === latestDate)
         setAdded(today.filter((r) => r.change_type === 'added'))
         setRemoved(today.filter((r) => r.change_type === 'removed'))
@@ -36,14 +32,20 @@ export default function DailyStatus() {
       .catch(console.error)
   }, [])
 
+  const title = titleDate
+    ? t('dailyStatus.titleDate', { date: titleDate })
+    : t('dailyStatus.title')
+
   const renderList = (list, cls) => {
-    if (list === null) return <span className="ds-empty">Ladataan<span className="dot-anim" /></span>
-    if (!list.length)  return <span className="ds-empty">Ei muutoksia</span>
+    if (list === null)
+      return <span className="ds-empty">{t('dailyStatus.loading')}<span className="dot-anim" /></span>
+    if (!list.length)
+      return <span className="ds-empty">{t('dailyStatus.noChanges')}</span>
     return list.map((r) => (
       <div key={r.callsign + r.change_date} className={`ds-item ${cls}`}>
         <span>{r.callsign}</span>
         <span className={TAG_CLS[r.category] ?? 'ds-tag'}>
-          {TAG_LABEL[r.category] ?? r.category}
+          {t('category.' + r.category) ?? r.category}
         </span>
       </div>
     ))
@@ -56,11 +58,11 @@ export default function DailyStatus() {
       </div>
       <div className="daily-status">
         <div className="ds-half">
-          <div className="ds-label">▲ Uudet / lisätyt</div>
+          <div className="ds-label">{t('dailyStatus.added')}</div>
           <div className="ds-list">{renderList(added, 'added')}</div>
         </div>
         <div className="ds-half">
-          <div className="ds-label">▼ Poistetut</div>
+          <div className="ds-label">{t('dailyStatus.removed')}</div>
           <div className="ds-list">{renderList(removed, 'removed')}</div>
         </div>
       </div>

@@ -14,7 +14,8 @@ $dotenv->safeLoad();
 // ── Application ──────────────────────────────────────────────────────────────
 $app = AppFactory::create();
 $app->addRoutingMiddleware();
-$app->addErrorMiddleware(false, true, true);
+$debug = filter_var($_ENV['APP_DEBUG'] ?? false, FILTER_VALIDATE_BOOLEAN);
+$app->addErrorMiddleware($debug, true, true);
 
 // ── CORS middleware ───────────────────────────────────────────────────────────
 $app->add(function (Request $request, $handler): Response {

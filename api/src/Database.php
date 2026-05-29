@@ -18,8 +18,8 @@ class Database
     {
         $host = $_ENV['DB_HOST']     ?? 'localhost';
         $port = $_ENV['DB_PORT']     ?? '3306';
-        $name = $_ENV['DB_NAME']     ?? 'traficom_tracker';
-        $user = $_ENV['DB_USER']     ?? 'traficom';
+        $name = $_ENV['DB_NAME']     ?? 'calls_tracker';
+        $user = $_ENV['DB_USER']     ?? 'calls_tracker';
         $pass = $_ENV['DB_PASSWORD'] ?? '';
 
         $dsn = "mysql:host={$host};port={$port};dbname={$name};charset=utf8mb4";

@@ -46,4 +46,14 @@ class Database
         $stmt->execute($params);
         return $stmt;
     }
+
+    /** Prepare a statement without executing it (useful for repeated execution in loops). */
+    public function prepare(string $sql): PDOStatement
+    {
+        return $this->pdo->prepare($sql);
+    }
+
+    public function beginTransaction(): void  { $this->pdo->beginTransaction(); }
+    public function commit(): void            { $this->pdo->commit(); }
+    public function rollback(): void          { $this->pdo->rollBack(); }
 }

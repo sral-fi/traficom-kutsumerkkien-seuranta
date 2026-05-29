@@ -8,7 +8,7 @@ Seuraa suomalaisten radioamatöörikutsujen (OF/OG/OH/OI/OJ) muutoksia Traficomi
 |-------------|-----------|
 | REST API | PHP 8.1+, Slim 4, PDO/MariaDB |
 | Frontend | React 18, Vite, Chart.js |
-| Datahakija | Python 3.11, requests, BeautifulSoup |
+| Datahakija | PHP 8.1+ (cron), curl, DOMDocument |
 | Tietokanta | MariaDB / MySQL |
 | Reverse proxy | nginx |
 
@@ -17,6 +17,8 @@ Seuraa suomalaisten radioamatöörikutsujen (OF/OG/OH/OI/OJ) muutoksia Traficomi
 ```
 traficom-tracker/
 ├── api/                        # PHP Slim4 REST API
+│   ├── bin/
+│   │   └── fetcher.php         # Cron-datahakija (PHP-portti)
 │   ├── public/
 │   │   ├── index.php           # Entry point (Slim app)
 │   │   └── .htaccess           # Apache rewrite (nginx ei tarvitse)
@@ -87,22 +89,37 @@ npm run dev               # http://localhost:5173
 npm run build             # tulostuu frontend/dist/
 ```
 
-## Python-datahakija
+## PHP-datahakija
+
+`api/bin/fetcher.php` käyttää samaa `composer`-autoloaderia ja `.env`-tiedostoa
+kuin API. Erillisiä riippuvuuksia ei tarvita – PHP:n sisäänrakennetut `curl` ja
+`DOMDocument` riittävät.
+
+```bash
+# Yksi ajo (kehitys / testaus)
+php api/bin/fetcher.php
+
+# Pakota uushaku vaikka tänään jo haettu
+php api/bin/fetcher.php --force
+```
+
+## Cron
+
+Aja hakija päivittäin Traficomin päivityksen jälkeen (noin klo 04:00):
+
+```
+15 4 * * * php /opt/traficom-tracker/api/bin/fetcher.php >> /var/log/traficom-fetcher.log 2>&1
+```
+
+### Python-hakija (vanha, säilytetty varmuuden vuoksi)
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env      # sama .env kuin API:lle (DB-yhteystiedot)
 
-python3 fetcher.py        # yksi ajo
-python3 fetcher.py --force  # pakota uushaku vaikka tänään jo haettu
-```
-
-## Cron
-
-```
-0 4 * * * cd /opt/traficom-tracker && /opt/traficom-tracker/venv/bin/python3 fetcher.py >> /var/log/traficom-fetcher.log 2>&1
+python3 fetcher.py
+python3 fetcher.py --force
 ```
 
 ## nginx-konfiguraatio

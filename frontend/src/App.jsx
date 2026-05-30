@@ -37,7 +37,7 @@ export default function App() {
   const { locale, setLocale, t } = useLocale()
 
   const [theme, setTheme] = useState(
-    () => localStorage.getItem('theme') ?? 'dark'
+    () => localStorage.getItem('theme') ?? 'light'
   )
   const [summary, setSummary]         = useState(null)
   const [stats, setStats]             = useState([])
@@ -82,6 +82,11 @@ export default function App() {
     <>
       <header>
         <div className="hdr-top">
+          <img
+            src="/sral-logo-sininen.png"
+            alt="SRAL"
+            className="sral-logo"
+          />
           <h1>
             <span className="hdr-prefix">
               {klingon ? toPIqaD('OF OG OH OI OJ') : t('header.prefix')}

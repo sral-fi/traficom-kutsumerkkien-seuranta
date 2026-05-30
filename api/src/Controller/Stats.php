@@ -53,9 +53,12 @@ final class Stats
         $latestFields = ['total', 'added', 'removed', 'new_callsigns', 'renewals', 'genuine_removes', 'pending_removes'];
         $weekFields   = ['added_7d', 'removed_7d', 'new_7d', 'renewals_7d', 'genuine_removes_7d', 'pending_removes_7d'];
 
+        // SUM aggregate always returns a row even on empty table (all NULLs) — treat that as no data
+        $weekHasData = $week && array_filter($week, static fn($v) => $v !== null);
+
         $data = [
-            'latest'      => $latest ? self::castRow($latest, $latestFields) : null,
-            'last_7_days' => $week   ? self::castRow($week,   $weekFields)   : null,
+            'latest'      => $latest      ? self::castRow($latest, $latestFields) : null,
+            'last_7_days' => $weekHasData ? self::castRow($week,   $weekFields)   : null,
         ];
 
         return JsonResponse::withJson($response, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));

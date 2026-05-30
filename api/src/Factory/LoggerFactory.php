@@ -40,7 +40,7 @@ final class LoggerFactory
         return $logger;
     }
 
-    public function addFileHandler(string $filename, int $level = null): self
+    public function addFileHandler(string $filename, ?int $level = null): self
     {
         $filename = sprintf('%s/%s', $this->path, $filename);
 
@@ -62,7 +62,7 @@ final class LoggerFactory
         return $this;
     }
 
-    public function addConsoleHandler(int $level = null): self
+    public function addConsoleHandler(?int $level = null): self
     {
         $streamHandler = new StreamHandler('php://stdout', $level ?? $this->level);
         $streamHandler->setFormatter(new LineFormatter(null, null, false, true));

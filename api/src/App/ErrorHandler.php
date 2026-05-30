@@ -11,7 +11,19 @@ $customErrorHandler = function (
     bool $displayErrorDetails,
     bool $logErrors,
     bool $logErrorDetails
-) use ($app): Response {
+) use ($app, $container): Response {
+    if ($logErrors) {
+        try {
+            $logger = $container->offsetGet('error_log');
+            $logger->error($exception->getMessage(), [
+                'class' => get_class($exception),
+                'file'  => $exception->getFile(),
+                'line'  => $exception->getLine(),
+            ]);
+        } catch (\Throwable $e) {
+            // logger unavailable — silently skip
+        }
+    }
     $statusCode = 500;
     if (is_int($exception->getCode()) &&
         $exception->getCode() >= 400 &&
@@ -38,11 +50,11 @@ $customErrorHandler = function (
             409 => 'Conflict',
             422 => 'Unprocessable Entity',
             429 => 'Too Many Requests',
+            500 => 'Internal Server Error',
+            503 => 'Service Unavailable',
         ];
         $data = [
-            'message' => $statusCode >= 500
-                ? 'Internal Server Error'
-                : ($clientMessages[$statusCode] ?? 'Request failed'),
+            'message' => $clientMessages[$statusCode] ?? ($statusCode >= 500 ? 'Internal Server Error' : 'Request failed'),
             'status' => 'error',
             'code'   => $statusCode,
         ];

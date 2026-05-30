@@ -16,29 +16,49 @@ require $apiDir . '/vendor/autoload.php';
 (Dotenv\Dotenv::createImmutable($apiDir))->safeLoad();
 
 use App\Database;
+use App\Factory\LoggerFactory;
+use Psr\Log\LoggerInterface;
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const BASE_URL   = 'https://eservices.traficom.fi/Licensesservices/Forms/AmateurLicenses.aspx?langid=fi';
 const USER_AGENT = 'Mozilla/5.0 (compatible; SRAL-calls-tracker/1.0)';
 const GRACE_DAYS = 7;
 
-// ── Logging ──────────────────────────────────────────────────────────────────
-function logInfo(string $msg): void
-{
-    echo date('Y-m-d H:i:s') . ' INFO  ' . $msg . PHP_EOL;
-}
+// ── Logger ───────────────────────────────────────────────────────────────────
+$_logLevelMap = [
+    'debug'   => \Monolog\Logger::DEBUG,
+    'info'    => \Monolog\Logger::INFO,
+    'warning' => \Monolog\Logger::WARNING,
+    'error'   => \Monolog\Logger::ERROR,
+];
+$_logLevelRaw   = strtolower($_SERVER['LOG_LEVEL'] ?? getenv('LOG_LEVEL') ?: 'info');
+$_resolvedLevel = $_logLevelMap[$_logLevelRaw] ?? \Monolog\Logger::INFO;
+
+$logger = (new LoggerFactory([
+    'name'            => 'fetcher',
+    'path'            => $apiDir . '/logs',
+    'level'           => $_resolvedLevel,
+    'file_permission' => 0775,
+]))
+->addFileHandler('app.log')
+->addConsoleHandler()
+->createInstance('fetcher');
+
+$logger->info('Fetcher starting', ['log_level' => $_logLevelRaw]);
 
 // ── 1. Fetch callsign list ────────────────────────────────────────────────────
 /**
  * @return list<array{0: string, 1: string}>  [[callsign, status], ...]
  */
-function fetchCallsignList(): array
+function fetchCallsignList(LoggerInterface $log): array
 {
     $cookieFile = tempnam(sys_get_temp_dir(), 'traficom_cookie_');
+    $log->debug('Cookie jar created', ['path' => $cookieFile]);
 
     try {
         // ── GET: load ASP.NET form to harvest hidden ViewState fields ─────────
-        logInfo('GET ' . BASE_URL);
+        $log->info('GET ' . BASE_URL);
+        $t0 = microtime(true);
         $ch = curl_init(BASE_URL);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
@@ -55,11 +75,12 @@ function fetchCallsignList(): array
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlErr  = curl_error($ch);
         curl_close($ch);
+        $log->debug('GET complete', ['http_code' => $httpCode, 'ms' => round((microtime(true) - $t0) * 1000)]);
 
         if ($html === false || $httpCode >= 400) {
             throw new RuntimeException("GET failed (HTTP $httpCode): $curlErr");
         }
-        logInfo("GET → $httpCode");
+        $log->info('GET response received', ['http_code' => $httpCode]);
 
         // Parse hidden ASP.NET form fields
         libxml_use_internal_errors(true);
@@ -72,6 +93,11 @@ function fetchCallsignList(): array
             $el          = $dom->getElementById($name);
             $hidden[$name] = $el ? $el->getAttribute('value') : '';
         }
+        $log->debug('ViewState fields parsed', [
+            '__VIEWSTATE_len'          => strlen($hidden['__VIEWSTATE']),
+            '__VIEWSTATEGENERATOR'     => $hidden['__VIEWSTATEGENERATOR'],
+            '__VIEWSTATEENCRYPTED_len' => strlen($hidden['__VIEWSTATEENCRYPTED']),
+        ]);
 
         // ── POST: submit form to download the plain-text callsign file ────────
         $postFields = http_build_query([
@@ -84,6 +110,8 @@ function fetchCallsignList(): array
             'ButtonDownload'                => 'Lataa tekstitiedostona',
         ]);
 
+        $log->info('POST ' . BASE_URL);
+        $t1 = microtime(true);
         $ch = curl_init(BASE_URL);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
@@ -102,13 +130,15 @@ function fetchCallsignList(): array
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlErr  = curl_error($ch);
         curl_close($ch);
+        $log->debug('POST complete', ['http_code' => $httpCode, 'bytes' => strlen((string) $body), 'ms' => round((microtime(true) - $t1) * 1000)]);
 
         if ($body === false || $httpCode >= 400) {
             throw new RuntimeException("POST failed (HTTP $httpCode): $curlErr");
         }
-        logInfo("POST → $httpCode");
+        $log->info('POST response received', ['http_code' => $httpCode, 'bytes' => strlen((string) $body)]);
     } finally {
         @unlink($cookieFile);
+        $log->debug('Cookie jar removed');
     }
 
     // Strip UTF-8 BOM, normalise line endings
@@ -118,10 +148,11 @@ function fetchCallsignList(): array
     if (empty(array_filter($lines))) {
         throw new RuntimeException('Empty response from Traficom');
     }
-    logInfo('Downloaded ' . count($lines) . ' lines (incl. header)');
+    $log->info('Downloaded lines from Traficom', ['line_count' => count($lines)]);
 
     // Skip header row; parse tab- or semicolon-separated columns
     $callsigns = [];
+    $skipped   = 0;
     foreach (array_slice($lines, 1) as $line) {
         $line = trim($line);
         if ($line === '') {
@@ -132,10 +163,12 @@ function fetchCallsignList(): array
             $callsigns[] = [strtoupper(trim($parts[0])), trim($parts[1])];
         } elseif (count($parts) === 1 && $parts[0] !== '') {
             $callsigns[] = [strtoupper(trim($parts[0])), 'VOIMASSA'];
+        } else {
+            $skipped++;
         }
     }
 
-    logInfo('Parsed ' . count($callsigns) . ' callsigns');
+    $log->info('Callsigns parsed', ['count' => count($callsigns), 'skipped_lines' => $skipped]);
     return $callsigns;
 }
 
@@ -143,7 +176,7 @@ function fetchCallsignList(): array
 /**
  * @param list<array{0: string, 1: string}> $callsigns
  */
-function storeSnapshot(array $callsigns, string $fetchedAt): void
+function storeSnapshot(array $callsigns, string $fetchedAt, LoggerInterface $log): void
 {
     $db   = Database::getInstance();
     $stmt = $db->prepare(
@@ -158,17 +191,18 @@ function storeSnapshot(array $callsigns, string $fetchedAt): void
         $db->commit();
     } catch (\Throwable $e) {
         $db->rollback();
+        $log->error('Failed to store snapshot', ['exception' => $e->getMessage()]);
         throw $e;
     }
 
-    logInfo('Stored ' . count($callsigns) . ' rows to snapshots');
+    $log->info('Snapshot stored', ['rows' => count($callsigns), 'fetched_at' => $fetchedAt]);
 }
 
 // ── 3. Compute raw diff ───────────────────────────────────────────────────────
 /**
  * @param list<string> $todayCalls  Plain list of callsign strings for today
  */
-function computeRawDiff(array $todayCalls, string $today): void
+function computeRawDiff(array $todayCalls, string $today, LoggerInterface $log): void
 {
     $db = Database::getInstance();
 
@@ -181,13 +215,13 @@ function computeRawDiff(array $todayCalls, string $today): void
     )->fetch();
 
     if ($prevRow === false) {
-        logInfo('No previous snapshot – writing initial stats only');
+        $log->info('No previous snapshot – writing initial stats only', ['today' => $today]);
         upsertDailyStats($today, count($todayCalls));
         return;
     }
 
     $prevDate = $prevRow->d;
-    logInfo('Comparing against ' . $prevDate);
+    $log->info('Comparing snapshots', ['today' => $today, 'prev' => $prevDate]);
 
     $prevCalls = array_column(
         $db->query(
@@ -196,6 +230,7 @@ function computeRawDiff(array $todayCalls, string $today): void
         )->fetchAll(PDO::FETCH_NUM),
         0
     );
+    $log->debug('Snapshot sizes', ['today' => count($todayCalls), 'prev' => count($prevCalls)]);
 
     $prevSet  = array_flip($prevCalls);
     $todaySet = array_flip($todayCalls);
@@ -203,10 +238,17 @@ function computeRawDiff(array $todayCalls, string $today): void
     $added   = array_keys(array_diff_key($todaySet, $prevSet));
     $removed = array_keys(array_diff_key($prevSet,  $todaySet));
 
-    logInfo('Raw diff: +' . count($added) . ' added, -' . count($removed) . ' removed');
+    $log->info('Raw diff computed', ['added' => count($added), 'removed' => count($removed)]);
+    if (count($added) > 0) {
+        $log->debug('Added callsigns', ['callsigns' => array_slice($added, 0, 20)]);
+    }
+    if (count($removed) > 0) {
+        $log->debug('Removed callsigns', ['callsigns' => array_slice($removed, 0, 20)]);
+    }
 
     // Idempotency: delete any existing changes for today before re-inserting
-    $db->query('DELETE FROM daily_changes WHERE change_date = ?', [$today]);
+    $deleted = $db->query('DELETE FROM daily_changes WHERE change_date = ?', [$today]);
+    $log->debug('Cleared existing changes for today', ['change_date' => $today]);
 
     $stmt = $db->prepare(
         'INSERT INTO daily_changes (change_date, callsign, change_type, category)
@@ -220,18 +262,21 @@ function computeRawDiff(array $todayCalls, string $today): void
         $db->commit();
     } catch (\Throwable $e) {
         $db->rollback();
+        $log->error('Failed to insert daily_changes', ['exception' => $e->getMessage()]);
         throw $e;
     }
+    $log->info('Daily changes inserted', ['added' => count($added), 'removed' => count($removed)]);
 
     // Always record today's snapshot total so reconcile() can update stats
     upsertDailyStats($today, count($todayCalls));
 }
 
 // ── 4. Reconcile ─────────────────────────────────────────────────────────────
-function reconcile(string $today): void
+function reconcile(string $today, LoggerInterface $log): void
 {
     $db         = Database::getInstance();
     $graceStart = date('Y-m-d', strtotime($today . ' -' . GRACE_DAYS . ' days'));
+    $log->debug('Reconcile window', ['today' => $today, 'grace_start' => $graceStart]);
 
     // a) added rows whose callsign appears in a recent removed row → renewal
     $stmt = $db->prepare(
@@ -248,7 +293,7 @@ function reconcile(string $today): void
            AND added.change_date <= ?"
     );
     $stmt->execute([$graceStart, $today]);
-    logInfo('Reconcile: ' . (int) ($stmt->rowCount() / 2) . ' renewal pair(s) marked');
+    $log->info('Renewals marked', ['pairs' => (int) ($stmt->rowCount() / 2)]);
 
     // b) remaining pending added → new
     $stmt = $db->prepare(
@@ -259,7 +304,7 @@ function reconcile(string $today): void
            AND change_date <= ?"
     );
     $stmt->execute([$today]);
-    logInfo('Reconcile: ' . $stmt->rowCount() . ' new callsign(s) marked');
+    $log->info('New callsigns marked', ['count' => $stmt->rowCount()]);
 
     // c) pending removes past grace period → genuine_remove
     $stmt = $db->prepare(
@@ -270,7 +315,7 @@ function reconcile(string $today): void
            AND change_date < ?"
     );
     $stmt->execute([$graceStart]);
-    logInfo('Reconcile: ' . $stmt->rowCount() . ' genuine removal(s) confirmed');
+    $log->info('Genuine removals confirmed', ['count' => $stmt->rowCount()]);
 
     // d) Refresh daily_stats for all dates with classified changes
     $rows = $db->query(
@@ -307,12 +352,14 @@ function reconcile(string $today): void
     while ($row = $rows->fetch(PDO::FETCH_NUM)) {
         [$cd, $total, $added, $removed, $newCs, $ren, $genRm, $pendRm] = $row;
         if ($total === null) {
+            $log->debug('Skipping stats upsert – no snapshot total', ['date' => $cd]);
             continue;   // no snapshot total yet for this date – skip
         }
         $upd->execute([$cd, $total, $added, $removed, $newCs, $ren, $genRm, $pendRm]);
+        $log->debug('Stats upserted', ['date' => $cd, 'total' => $total, 'added' => $added, 'removed' => $removed]);
     }
 
-    logInfo('Reconcile complete.');
+    $log->info('Reconcile complete');
 }
 
 // ── Helper: upsert daily_stats total ─────────────────────────────────────────
@@ -344,28 +391,34 @@ function upsertDailyStats(
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
-function run(): void
+function run(LoggerInterface $log): void
 {
     $force = in_array('--force', $_SERVER['argv'] ?? [], true);
     $today = date('Y-m-d');
+    $log->debug('Run parameters', ['force' => $force, 'today' => $today]);
 
     $already = (int) Database::getInstance()
         ->query('SELECT COUNT(*) FROM snapshots WHERE DATE(fetched_at) = ?', [$today])
         ->fetchColumn();
+    $log->debug('Existing rows for today', ['count' => $already]);
 
     if ($already > 0 && !$force) {
-        logInfo("Already fetched today ($today). Use --force to override.");
+        $log->info('Already fetched today – skipping fetch, running reconcile only', ['date' => $today]);
         // Run reconcile anyway – grace period may have expired since last run
-        reconcile($today);
+        reconcile($today, $log);
         return;
     }
 
-    $callsigns = fetchCallsignList();
-    storeSnapshot($callsigns, date('Y-m-d H:i:s'));
-    computeRawDiff(array_column($callsigns, 0), $today);
-    reconcile($today);
+    if ($force && $already > 0) {
+        $log->warning('--force flag set, re-fetching despite existing data', ['date' => $today, 'existing_rows' => $already]);
+    }
 
-    logInfo('Done.');
+    $callsigns = fetchCallsignList($log);
+    storeSnapshot($callsigns, date('Y-m-d H:i:s'), $log);
+    computeRawDiff(array_column($callsigns, 0), $today, $log);
+    reconcile($today, $log);
+
+    $log->info('Fetcher done', ['date' => $today, 'callsigns' => count($callsigns)]);
 }
 
-run();
+run($logger);

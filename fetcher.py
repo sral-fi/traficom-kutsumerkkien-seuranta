@@ -24,7 +24,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 BASE_URL   = "https://eservices.traficom.fi/Licensesservices/Forms/AmateurLicenses.aspx?langid=fi"
-HEADERS    = {"User-Agent": "Mozilla/5.0 (compatible; OH2LAK-tracker/1.0)", "Referer": BASE_URL}
+HEADERS    = {"User-Agent": "Mozilla/5.0 (compatible; SRAL-calls-tracker/1.0)", "Referer": BASE_URL}
 GRACE_DAYS = 7   # päivää ennen kuin poistettu merkki luokitellaan aidoksi poistoksi
 
 

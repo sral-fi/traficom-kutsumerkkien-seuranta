@@ -2,6 +2,8 @@
 
 Traficom radioamatöörikutsujen seurantatyökalu tarjoaa JSON REST API:n kutsumerkkidatan hakemiseen.
 
+Toteutus: **PHP 8.1+ / Slim 4**, PDO + MariaDB.
+
 Base URL: `https://oh-kutsumerkit.oh2lak.radio`
 
 ---

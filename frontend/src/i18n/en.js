@@ -34,7 +34,7 @@ export default {
   },
   search: {
     title: 'Callsign search',
-    placeholder: 'e.g. OH2LAK',
+    placeholder: 'e.g. OH2A',
     button: 'SEARCH',
     searching: 'Searching',
     error: 'Search error: {{msg}}',
@@ -65,7 +65,6 @@ export default {
     range3y: '3 yr',
     range5y: '5 yr',
     range10y: '10 yr',
-    rangeAll: 'All',
     viewClean: 'Clean',
     viewRaw: 'Raw',
     legendAdded: 'New / added',

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchSummary, fetchStats, fetchChanges } from './api'
 import { useLocale } from './i18n'
+import { APP_VERSION } from './config/constants'
 import KpiRow from './components/KpiRow'
 import DailyStatus from './components/DailyStatus'
 import SearchCard from './components/SearchCard'
@@ -156,7 +157,8 @@ export default function App() {
 
       <footer className="credits">
         Copyright &copy; 2026 SRAL. Original version written by OH2LAK &amp; LLM, enhancements by OH3HZB &amp; LLM.
-        {' '}Historical data and fetch logic enhancements: tnx OH6AD &amp; OH64K (<a href="https://github.com/OH6AD/koolitutka/" target="_blank" rel="noopener noreferrer">Koolitutka</a> project)
+        {' '}Historical data and fetch logic enhancements: tnx OH64K (<a href="https://github.com/OH6AD/koolitutka/" target="_blank" rel="noopener noreferrer">Koolitutka</a> project by <a href="https://www.oh6ad.fi/" target="_blank" rel="noopener noreferrer">OH6AD</a>)
+        {' — '}v{APP_VERSION}
       </footer>
     </>
   )

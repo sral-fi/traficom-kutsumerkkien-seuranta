@@ -14,7 +14,7 @@ final class Home
 {
     use DatabaseAware;
 
-    private const API_NAME    = 'traficom-callsign-tracker-api';
+    private const API_NAME    = 'sral-callsign-tracker-api';
     private const API_VERSION = '0.9.0';
 
     /** @var Container */
@@ -34,7 +34,7 @@ final class Home
                 'GET /api/summary' => 'Latest daily stats and 7-day totals',
                 'GET /api/stats'   => 'Historical stats (?days=90&view=clean|raw)',
                 'GET /api/changes' => 'Change log (?days=30&kind=added|removed&view=clean|raw)',
-                'GET /api/search'  => 'Callsign lookup (?q=OH2LAK)',
+                'GET /api/search'  => 'Callsign lookup (?q=OH2A)',
             ],
         ];
 

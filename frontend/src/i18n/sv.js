@@ -34,7 +34,7 @@ export default {
   },
   search: {
     title: 'Anropssignalsökning',
-    placeholder: 't.ex. OH2LAK',
+    placeholder: 't.ex. OH2A',
     button: 'SÖK',
     searching: 'Söker',
     error: 'Sökfel: {{msg}}',
@@ -65,7 +65,6 @@ export default {
     range3y: '3 år',
     range5y: '5 år',
     range10y: '10 år',
-    rangeAll: 'Alla',
     viewClean: 'Rensad',
     viewRaw: 'Rådata',
     legendAdded: 'Nya / tillagda',

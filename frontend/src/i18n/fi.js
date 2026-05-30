@@ -34,7 +34,7 @@ export default {
   },
   search: {
     title: 'Kutsumerkkihaku',
-    placeholder: 'esim. OH2LAK',
+    placeholder: 'esim. OH2A',
     button: 'HAE',
     searching: 'Haetaan',
     error: 'Virhe haussa: {{msg}}',
@@ -65,7 +65,6 @@ export default {
     range3y: '3 v',
     range5y: '5 v',
     range10y: '10 v',
-    rangeAll: 'Kaikki',
     viewClean: 'Siivottu',
     viewRaw: 'Raakadata',
     legendAdded: 'Uudet / lisätyt',

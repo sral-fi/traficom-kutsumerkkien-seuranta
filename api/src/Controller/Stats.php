@@ -78,8 +78,7 @@ final class Stats
                 'SELECT stat_date, total, added, removed,
                         new_callsigns, renewals, genuine_removes, pending_removes
                  FROM daily_stats
-                 ORDER BY stat_date',
-                []
+                 ORDER BY stat_date'
             )->fetchAll(PDO::FETCH_ASSOC);
         } else {
             $since = (new DateTimeImmutable("-{$days} days"))->format('Y-m-d');

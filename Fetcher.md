@@ -174,3 +174,7 @@ Notable log events:
 # Every day at 06:00 (Traficom publishes overnight)
 0 6 * * * php /path/to/api/bin/fetcher.php >> /path/to/api/logs/cron.log 2>&1
 ```
+
+## Credits
+
+Thanks to OH64K for fetching logic improvements (adopted from Koolitutka code)

@@ -46,6 +46,22 @@ $logger = (new LoggerFactory([
 
 $logger->info('Fetcher starting', ['log_level' => $_logLevelRaw]);
 
+// ── Callsign helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Returns the wildcard form of a callsign by replacing the 3rd character
+ * (district digit or separator) with '*'.
+ *
+ * Examples:  OH2LAK → OH*LAK,  OG0A → OG*A,  OH/JE1ABU → OH*JE1ABU
+ *
+ * A callsign whose 3rd character is already '*' is its own neighbour.
+ * Matches the neighbour() logic from koolitutka-update_database.php.
+ */
+function neighbourCallsign(string $cs): string
+{
+    return strlen($cs) >= 3 ? substr($cs, 0, 2) . '*' . substr($cs, 3) : $cs;
+}
+
 // ── 1. Fetch callsign list ────────────────────────────────────────────────────
 /**
  * @return list<array{0: string, 1: string}>  [[callsign, status], ...]
@@ -150,25 +166,66 @@ function fetchCallsignList(LoggerInterface $log): array
     }
     $log->info('Downloaded lines from Traficom', ['line_count' => count($lines)]);
 
-    // Skip header row; parse tab- or semicolon-separated columns
-    $callsigns = [];
-    $skipped   = 0;
+    // Skip header row; parse tab- or semicolon-separated columns.
+    // Build a deduplication table first: VOIMASSA wins on conflict.
+    // This mirrors the duplicate-handling logic in koolitutka-update_database.php.
+    $table      = [];  // callsign → status
+    $duplicates = 0;
+    $skipped    = 0;
     foreach (array_slice($lines, 1) as $line) {
         $line = trim($line);
-        if ($line === '') {
-            continue;
-        }
-        $parts = preg_split('/[;\t]/', $line);
-        if (count($parts) >= 2) {
-            $callsigns[] = [strtoupper(trim($parts[0])), trim($parts[1])];
-        } elseif (count($parts) === 1 && $parts[0] !== '') {
-            $callsigns[] = [strtoupper(trim($parts[0])), 'VOIMASSA'];
+        if ($line === '') continue;
+
+        $parts  = preg_split('/[;\t]/', $line);
+        $rawCs  = strtoupper(trim($parts[0] ?? ''));
+        $status = trim($parts[1] ?? 'VOIMASSA');
+
+        if ($rawCs === '') { $skipped++; continue; }
+
+        if (!isset($table[$rawCs])) {
+            $table[$rawCs] = $status;
+        } elseif ($status === 'VOIMASSA' && $table[$rawCs] !== 'VOIMASSA') {
+            // VOIMASSA is the strongest state and overrides VARAUS/KARENSSI
+            $table[$rawCs] = 'VOIMASSA';
+            $duplicates++;
         } else {
-            $skipped++;
+            $duplicates++;
         }
     }
 
-    $log->info('Callsigns parsed', ['count' => count($callsigns), 'skipped_lines' => $skipped]);
+    // Wildcard duplicate detection.
+    // Traficom used to list a callsign in both its full form (e.g. OH6EYA) and
+    // wildcard form (OH*EYA) simultaneously.  Rules (same as koolitutka):
+    //   – full-form is VOIMASSA  → drop the wildcard entry
+    //   – states match           → drop the full form, keep the wildcard
+    $wildcardDropped = 0;
+    foreach (array_keys($table) as $cs) {
+        if (!isset($table[$cs])) continue;   // already removed in a previous iteration
+        $wc = neighbourCallsign($cs);
+        if ($wc === $cs) continue;           // already a wildcard – nothing to compare
+        if (!isset($table[$wc])) continue;   // no wildcard counterpart present
+
+        if ($table[$cs] === 'VOIMASSA') {
+            unset($table[$wc]);              // drop wildcard, keep active full form
+            $wildcardDropped++;
+        } elseif ($table[$cs] === $table[$wc]) {
+            unset($table[$cs]);              // same status → keep wildcard, drop full form
+            $wildcardDropped++;
+        }
+        // Differing non-VOIMASSA states: both are kept (edge case, logged below)
+    }
+
+    $callsigns = [];
+    foreach ($table as $cs => $status) {
+        $callsigns[] = [$cs, $status];
+    }
+
+    $log->info('Callsigns parsed', [
+        'count'            => count($callsigns),
+        'duplicates'       => $duplicates,
+        'wildcard_dropped' => $wildcardDropped,
+        'skipped_lines'    => $skipped,
+    ]);
     return $callsigns;
 }
 
@@ -237,6 +294,19 @@ function computeRawDiff(array $todayCalls, string $today, LoggerInterface $log):
 
     $added   = array_keys(array_diff_key($todaySet, $prevSet));
     $removed = array_keys(array_diff_key($prevSet,  $todaySet));
+
+    // Sanity check: a very large removal count on a single day is a strong indicator
+    // of a Traficom data anomaly.  Flag it so the operator can investigate.
+    $suspiciousThreshold = max(200, (int)(count($todayCalls) * 0.05));
+    if (count($removed) > $suspiciousThreshold) {
+        $log->warning('Suspiciously large removal count – possible Traficom data anomaly', [
+            'today'     => $today,
+            'removed'   => count($removed),
+            'added'     => count($added),
+            'threshold' => $suspiciousThreshold,
+            'total'     => count($todayCalls),
+        ]);
+    }
 
     $log->info('Raw diff computed', ['added' => count($added), 'removed' => count($removed)]);
     if (count($added) > 0) {
@@ -414,6 +484,39 @@ function run(LoggerInterface $log): void
     }
 
     $callsigns = fetchCallsignList($log);
+
+    // ── Anomaly guard ─────────────────────────────────────────────────────────
+    // Traficom has published lists with zero KARENSSI/VARAUS entries during holiday
+    // periods (known occurrence: 2019-12-13 to 2019-12-21).  If the current download
+    // has no non-VOIMASSA entries but the previous snapshot did, the diff would
+    // incorrectly mark all KARENSSI/VARAUS callsigns as removed.  In that case we
+    // store the snapshot for reference but skip the diff entirely.
+    // Mirrors the anomaly_bridge logic in koolitutka-update_database.php.
+    $nonVoimassaToday = count(array_filter($callsigns, static fn($c) => $c[1] !== 'VOIMASSA'));
+    if ($nonVoimassaToday === 0) {
+        $prevNonVoimassa = (int) Database::getInstance()
+            ->query(
+                "SELECT COUNT(*) FROM snapshots
+                 WHERE DATE(fetched_at) = (
+                     SELECT MAX(DATE(fetched_at)) FROM snapshots WHERE DATE(fetched_at) < ?
+                 ) AND status != 'VOIMASSA'",
+                [$today]
+            )->fetchColumn();
+
+        if ($prevNonVoimassa > 0) {
+            $log->warning(
+                'Traficom anomaly detected: download contains zero non-VOIMASSA entries ' .
+                'but previous snapshot had some. Storing snapshot, skipping diff.',
+                ['today' => $today, 'prev_non_voimassa' => $prevNonVoimassa]
+            );
+            storeSnapshot($callsigns, date('Y-m-d H:i:s'), $log);
+            upsertDailyStats($today, count($callsigns));
+            reconcile($today, $log);
+            $log->info('Fetcher done (anomaly day – diff skipped)', ['date' => $today]);
+            return;
+        }
+    }
+
     storeSnapshot($callsigns, date('Y-m-d H:i:s'), $log);
     computeRawDiff(array_column($callsigns, 0), $today, $log);
     reconcile($today, $log);

@@ -7,9 +7,11 @@
  *
  * Source schema (SQLite):
  *   event   – (callsign, neighbour, status, from_date, to_date)
- *               to_date = 'NOW'    → callsign still active
- *               to_date = 'DATE'   → callsign left on that date
- *               from_date = NULL   → start date unknown (before tracking began)
+ *               to_date = 'NOW'    → callsign still active in the most recent snapshot
+ *               to_date = 'DATE'   → period ended on that date (set to prev_date when callsign
+ *                                    disappeared from a snapshot)
+ *               from_date = NULL   → genesis entries only (before tracking began)
+ *               from_date = 'DATE' → new period started on that date (all non-genesis rows)
  *   updates – (hash, authored)     → dates when a snapshot was taken
  *
  * Target tables (MySQL):
@@ -164,20 +166,44 @@ $insStats  = $db->prepare(
 // ── SQLite query helpers ──────────────────────────────────────────────────────
 
 /**
- * All callsigns active on a given date:
- *   to_date = 'NOW'  → still active
- *   to_date >= date  → was active on that date (left later)
- * from_date is always NULL in this dataset, so we ignore it.
+ * All callsigns active in the snapshot for a given authored date:
+ *   to_date = 'NOW'   → still active in the most recent snapshot
+ *   to_date = date    → was present in this snapshot but gone from the next one
+ * koolitutka-update_database.php sets to_date = prev_date (= the current authored date)
+ * for any callsign that disappears, so to_date is an exact match to authored dates.
  */
 $stmtActive = $sqlite->prepare(
     "SELECT DISTINCT callsign FROM event
-     WHERE to_date = 'NOW' OR to_date >= ?"
+     WHERE to_date = 'NOW' OR to_date = ?"
 );
 
-/** Count of active callsigns on a date. */
+/** Count of callsigns active in the snapshot for a given authored date. */
 $stmtTotal = $sqlite->prepare(
     "SELECT COUNT(DISTINCT callsign) FROM event
-     WHERE to_date = 'NOW' OR to_date >= ?"
+     WHERE to_date = 'NOW' OR to_date = ?"
+);
+
+/**
+ * Callsigns whose period ended (to_date) in the window [graceStart, date).
+ * A callsign removed within GRACE days before it is re-added → classify the re-add as 'renewal'.
+ * ix_current covers to_date queries efficiently.
+ */
+$stmtRecentRemoves = $sqlite->prepare(
+    "SELECT DISTINCT callsign FROM event
+     WHERE to_date != 'NOW' AND to_date >= ? AND to_date < ?"
+);
+
+/**
+ * Callsigns that start a new period (to_date = 'NOW' or to_date > date) with a to_date
+ * recorded in (date, graceEnd] by checking future-snapshot activity. Because from_date is
+ * always NULL in this dataset we detect future returns by checking whether the callsign
+ * appears in any snapshot between date+1 and date+GRACE.
+ * We use to_date > date for the future window: a callsign with to_date=D means it was
+ * present in snapshot D; if D is in (date, graceEnd] then it returned.
+ */
+$stmtFutureReturn = $sqlite->prepare(
+    "SELECT DISTINCT callsign FROM event
+     WHERE (to_date = 'NOW' OR to_date > ?) AND (to_date = 'NOW' OR to_date <= ?)"
 );
 
 // Build a map of date → previous date from the updateDates list so we can diff
@@ -207,6 +233,9 @@ $cntProcessed = 0;
 $cntSkipped   = 0;
 $cntAdded     = 0;
 $cntRemoved   = 0;
+$totalNew     = 0; // added + classified as 'new' (not a renewal)
+$totalRenewal = 0; // removed + classified as 'renewal'
+$totalGenuine = 0; // removed + classified as 'genuine_remove'
 
 foreach ($updateDates as $date) {
     if (isset($existingSet[$date])) {
@@ -219,9 +248,6 @@ foreach ($updateDates as $date) {
     $stmtTotal->execute([$date]);
     $total = (int) $stmtTotal->fetchColumn();
 
-    // Derive added/removed by comparing active sets with the previous update date
-    $todaySet = $getActiveSet($date);
-
     if (!isset($prevDateMap[$date])) {
         // First date in the dataset – no previous to compare against
         $log->info('First date – no diff possible, recording total only', ['date' => $date, 'total' => $total]);
@@ -232,42 +258,43 @@ foreach ($updateDates as $date) {
         continue;
     }
 
-    $prevSet = $getActiveSet($prevDateMap[$date]);
+    // Fetch prevSet FIRST so the 2-slot LRU cache keeps it warm after todaySet is added.
+    $prevSet  = $getActiveSet($prevDateMap[$date]);
+    $todaySet = $getActiveSet($date);
 
     $added   = array_keys(array_diff_key($todaySet, $prevSet));
     $removed = array_keys(array_diff_key($prevSet,  $todaySet));
 
-    // Grace-window sets for classification (look ±7 days in the SQLite event table)
+    // Grace-window bounds
     $graceStart = date('Y-m-d', strtotime($date . ' -' . GRACE . ' days'));
     $graceEnd   = date('Y-m-d', strtotime($date . ' +' . GRACE . ' days'));
 
-    // Future adds within grace: callsigns that appear in a later active set
-    // Proxy: callsigns whose to_date falls within (date, graceEnd] AND they re-appear
-    // Simpler and accurate: check if a removed callsign is active again by graceEnd
-    $graceEndSet = $getActiveSet($graceEnd);
-    $futureAddsSet = $graceEndSet; // active on graceEnd = came back within window
+    // Callsigns that returned in a snapshot within GRACE days after D.
+    // to_date in (D, graceEnd] means the callsign was active in some snapshot in that window.
+    $stmtFutureReturn->execute([$date, $graceEnd]);
+    $futureReturnsSet = array_flip($stmtFutureReturn->fetchAll(PDO::FETCH_COLUMN));
 
-    // Prior removes within grace: callsigns not active graceStart days ago but active now (added recently)
-    $graceStartSet = $getActiveSet($graceStart);
+    // Callsigns whose period ended in [D-GRACE, D) → recently removed before this date.
+    $stmtRecentRemoves->execute([$graceStart, $date]);
+    $recentRemovesSet = array_flip($stmtRecentRemoves->fetchAll(PDO::FETCH_COLUMN));
 
-    // Classify removes: if the callsign is back by graceEnd → renewal, else genuine
+    // Classify removes: if the callsign returns within GRACE days → renewal, else genuine
     $removedCats = [];
     $cntGenuine  = 0;
     $cntRenewal  = 0;
     foreach ($removed as $cs) {
-        $cat              = isset($futureAddsSet[$cs]) ? 'renewal' : 'genuine_remove';
+        $cat              = isset($futureReturnsSet[$cs]) ? 'renewal' : 'genuine_remove';
         $removedCats[$cs] = $cat;
         if ($cat === 'renewal') $cntRenewal++;
         else $cntGenuine++;
     }
 
-    // Classify adds: if the callsign was absent graceStart days ago it's new, else renewal
+    // Classify adds: if the callsign had a period end within GRACE days before D → renewal,
+    // otherwise genuinely new.
     $addedCats = [];
     $cntNew    = 0;
     foreach ($added as $cs) {
-        // Was it absent on graceStart (i.e. recently removed and now back)?
-        $wasAbsent = !isset($graceStartSet[$cs]);
-        $cat       = $wasAbsent ? 'new' : 'renewal';
+        $cat            = isset($recentRemovesSet[$cs]) ? 'renewal' : 'new';
         $addedCats[$cs] = $cat;
         if ($cat === 'new') $cntNew++;
     }
@@ -284,8 +311,11 @@ foreach ($updateDates as $date) {
 
     if ($dryRun) {
         $cntProcessed++;
-        $cntAdded   += count($added);
-        $cntRemoved += count($removed);
+        $cntAdded     += count($added);
+        $cntRemoved   += count($removed);
+        $totalNew     += $cntNew;
+        $totalRenewal += $cntRenewal;
+        $totalGenuine += $cntGenuine;
         continue;
     }
 
@@ -315,8 +345,11 @@ foreach ($updateDates as $date) {
     }
 
     $cntProcessed++;
-    $cntAdded   += count($added);
-    $cntRemoved += count($removed);
+    $cntAdded     += count($added);
+    $cntRemoved   += count($removed);
+    $totalNew     += $cntNew;
+    $totalRenewal += $cntRenewal;
+    $totalGenuine += $cntGenuine;
 }
 
 $log->info('Import complete', [
@@ -324,6 +357,9 @@ $log->info('Import complete', [
     'dates_skipped'   => $cntSkipped,
     'changes_added'   => $cntAdded,
     'changes_removed' => $cntRemoved,
+    'new_callsigns'   => $totalNew,
+    'renewals'        => $totalRenewal,
+    'genuine_removes' => $totalGenuine,
     'dry_run'         => $dryRun,
 ]);
 
@@ -333,6 +369,10 @@ if ($dryRun) {
     echo sprintf("  Dates that would be imported : %d\n", $cntProcessed);
     echo sprintf("  Dates skipped (already exist): %d\n", $cntSkipped);
     echo sprintf("  'added'   rows               : %d\n", $cntAdded);
+    echo sprintf("    of which 'new'             : %d\n", $totalNew);
+    echo sprintf("    of which 'renewal'         : %d\n", $cntAdded - $totalNew);
     echo sprintf("  'removed' rows               : %d\n", $cntRemoved);
+    echo sprintf("    of which 'genuine_remove'  : %d\n", $totalGenuine);
+    echo sprintf("    of which 'renewal'         : %d\n", $totalRenewal);
     echo "======================================================" . PHP_EOL;
 }

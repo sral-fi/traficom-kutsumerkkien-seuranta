@@ -9,7 +9,9 @@ async function get(path) {
 export const fetchSummary = () => get('/api/summary')
 
 export const fetchStats = (days = 90, view = 'clean') =>
-  get(`/api/stats?days=${days}&view=${view}`)
+  days === 0
+    ? get(`/api/stats?all=1&view=${view}`)
+    : get(`/api/stats?days=${days}&view=${view}`)
 
 export const fetchChanges = (days = 30, kind = 'all', view = 'clean') =>
   get(`/api/changes?days=${days}&kind=${kind}&view=${view}`)

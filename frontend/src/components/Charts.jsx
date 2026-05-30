@@ -16,7 +16,18 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarEleme
 ChartJS.defaults.font.family = "'JetBrains Mono', monospace"
 ChartJS.defaults.font.size   = 11
 
-const RANGE_DAYS = [30, 90, 180, 365]
+const RANGE_DAYS = [30, 90, 180, 365, 1095, 1825, 3650, 0]
+
+const RANGE_LABEL_KEY = {
+  30:   'charts.range30',
+  90:   'charts.range90',
+  180:  'charts.range180',
+  365:  'charts.range365',
+  1095: 'charts.range3y',
+  1825: 'charts.range5y',
+  3650: 'charts.range10y',
+  0:    'charts.rangeAll',
+}
 
 export default function Charts({ stats, currentDays, currentView, onDaysChange, onViewChange, theme }) {
   const { t } = useLocale()
@@ -120,7 +131,7 @@ export default function Charts({ stats, currentDays, currentView, onDaysChange, 
     },
   }
 
-  const rangeLabelKey = { 30: 'charts.range30', 90: 'charts.range90', 180: 'charts.range180', 365: 'charts.range365' }
+  const rangeLabelKey = RANGE_LABEL_KEY
 
   return (
     <>

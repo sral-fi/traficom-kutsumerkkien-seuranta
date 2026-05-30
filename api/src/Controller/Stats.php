@@ -67,20 +67,31 @@ final class Stats
     public function getStats(Request $request, Response $response): Response
     {
         $params = $request->getQueryParams();
-        $days   = self::intQ($params, 'days', 90, 7, 730);
+        $all    = ($params['all'] ?? '') === '1';
+        $days   = self::intQ($params, 'days', 90, 7, 3650);
         $view   = in_array($params['view'] ?? '', ['clean', 'raw'], true) ? $params['view'] : 'clean';
 
-        $since = (new DateTimeImmutable("-{$days} days"))->format('Y-m-d');
-        $db    = $this->getDb();
+        $db = $this->getDb();
 
-        $rows = $db->query(
-            'SELECT stat_date, total, added, removed,
-                    new_callsigns, renewals, genuine_removes, pending_removes
-             FROM daily_stats
-             WHERE stat_date >= ?
-             ORDER BY stat_date',
-            [$since]
-        )->fetchAll(PDO::FETCH_ASSOC);
+        if ($all) {
+            $rows = $db->query(
+                'SELECT stat_date, total, added, removed,
+                        new_callsigns, renewals, genuine_removes, pending_removes
+                 FROM daily_stats
+                 ORDER BY stat_date',
+                []
+            )->fetchAll(PDO::FETCH_ASSOC);
+        } else {
+            $since = (new DateTimeImmutable("-{$days} days"))->format('Y-m-d');
+            $rows = $db->query(
+                'SELECT stat_date, total, added, removed,
+                        new_callsigns, renewals, genuine_removes, pending_removes
+                 FROM daily_stats
+                 WHERE stat_date >= ?
+                 ORDER BY stat_date',
+                [$since]
+            )->fetchAll(PDO::FETCH_ASSOC);
+        }
 
         $intFields = ['total', 'added', 'removed', 'new_callsigns', 'renewals', 'genuine_removes', 'pending_removes'];
         $result    = [];

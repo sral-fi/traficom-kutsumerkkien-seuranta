@@ -95,6 +95,14 @@ header h1 {
 
 /* ── Main layout ── */
 .main { max-width: 1200px; margin: 16px auto; padding: 0 12px; display: grid; gap: 14px; }
+
+/* ── Credits footer ── */
+.credits {
+  max-width: 1200px; margin: 20px auto 12px; padding: 0 12px;
+  font-size: .62rem; color: var(--dim); line-height: 1.6;
+}
+.credits a { color: var(--dim); text-underline-offset: 3px; }
+.credits a:hover { color: var(--text); }
 .card { background: var(--surface); border: 1px solid var(--border); padding: 16px; }
 .card-header {
   display: flex; align-items: center; justify-content: space-between;

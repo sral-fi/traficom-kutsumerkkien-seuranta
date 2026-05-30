@@ -153,6 +153,11 @@ export default function App() {
           {toPIqaD('NUQNEH')}
         </div>
       )}
+
+      <footer className="credits">
+        Copyright &copy; 2026 SRAL. Original version written by OH2LAK &amp; LLM, enhancements by OH3HZB &amp; LLM.
+        {' '}Historical data and fetch logic enhancements: tnx OH6AD &amp; OH64K (<a href="https://github.com/OH6AD/koolitutka/" target="_blank" rel="noopener noreferrer">Koolitutka</a> project)
+      </footer>
     </>
   )
 }

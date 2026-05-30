@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 // API root endpoints
-$app->get('/',    'App\Controller\Home:getHelp');
-$app->get('/api', 'App\Controller\Home:getHelp');
+$app->get('/',     'App\Controller\Home:getHelp');
+$app->get('/api',  'App\Controller\Home:getHelp');
+$app->get('/api/', 'App\Controller\Home:getHelp');
 
 // Statistics
 $app->get('/api/summary', 'App\Controller\Stats:getSummary');

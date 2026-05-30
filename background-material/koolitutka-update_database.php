@@ -1,0 +1,261 @@
+#!/usr/bin/env php
+<?php
+
+error_reporting(E_ALL);
+require_once(__DIR__.'/lib/db.php');
+require_once(__DIR__.'/lib/git_diff.php');
+
+// Parse config
+$config_file = __DIR__.'/config.ini';
+$config = parse_ini_file($config_file, TRUE);
+if ($config === FALSE) {
+    err("No configuration file found at $config_file", 1);
+}
+$config = (object)$config;
+$config->git = (object)$config->git;
+$file = 'oh-callsigns.tsv';
+
+// Check if we need to create a database
+$init_db = !file_exists($config->database);
+
+// Connect database
+$db = new SQLite3($config->database);
+$db->busyTimeout(2000);
+$db->exec('PRAGMA journal_mode = wal');
+
+// Initialize database if needed
+if ($init_db) {
+    print("Creating database... ");
+    $db->exec(file_get_contents(__DIR__.'/lib/schema.sql'));
+    print("OK\n");
+}
+
+// Statements. TMP is a temporary value which must be cleaned before
+// committing a transaction.
+$select_from_commit = $db->prepare('SELECT hash,authored FROM updates ORDER BY rowid DESC LIMIT 1');
+$insert_end_commit = $db->prepare('INSERT INTO updates VALUES (?,?)');
+$mark_active_events = $db->prepare("UPDATE event SET to_date='TMP' WHERE to_date='NOW'");
+$update_event = $db->prepare("UPDATE event SET to_date='NOW' WHERE callsign=:callsign AND status=:status AND to_date='TMP'");
+$insert_event = $db->prepare("INSERT INTO event VALUES (:callsign, :neighbour, :status, :date, 'NOW')");
+$anomaly_bridge = $db->prepare("UPDATE event SET to_date='NOW' WHERE status != 'VOIMASSA' AND to_date='TMP'");
+$anomaly2_bridge = $db->prepare("UPDATE event SET to_date='NOW' WHERE to_date='TMP'");
+$unmark_old_events = $db->prepare("UPDATE event SET to_date=:prev_date WHERE to_date='TMP'");
+
+// Get the previous commit or feed it with genesis commit
+$from_result = db_execute($select_from_commit)->fetchArray();
+$genesis = $from_result === false;
+if ($genesis) $from_result = [
+    'hash'     => 'bc9d5424fa0f3c5afb1bbcf33249ec7e09432320',
+    'authored' => null,
+];
+
+$range = $from_result['hash'].'..'.$config->git->branch;
+$prev_date = $from_result['authored'];
+
+// Update git
+if ($config->git->fetch) {
+    try {
+        git_raw('git fetch', $config->git->repo);
+    } catch (RuntimeException $e) {
+        err('Unable to update git repository: '.$e->getMessage(), 1);
+    }
+}
+
+if(!$genesis) printf("Resuming from $prev_date\n");
+
+// Iterating through commits
+$commits = git_log($config->git->repo, $range, $file);
+while (TRUE) {
+    $match = parse_line($commits->pipe, '/^([^ ]*) (.*)/');
+    if ($match === FALSE) break; // All commits processed
+    if (is_string($match)) {
+        err("Unable to parse version history line $match", 1);
+    }
+
+    // Get hash and use the previous day as the date. The ministry
+    // updates the database the next morning (e.g. Friday data arrives
+    // on Saturday morning.
+    $hash = $match[1];
+    $ts = intval($match[2])-86400;
+    $date = date('Y-m-d', $ts);
+
+    // Determine if using previous commit date or one day before the
+    // $date. Sometimes we have two commits per day which needs to be
+    // handled properly. Taking the newer of the options.
+    $prev_date_b = date('Y-m-d', $ts - 86400);
+    if ($prev_date === null || strcmp($prev_date, $prev_date_b) <= 0) $prev_date = $prev_date_b;
+
+    printf("Processing $date... ");
+
+    // Collect call signs in that commit
+    $callsigns = open_koolit($config->git->repo, $hash);
+    $table = [];
+    $mangles = 0;
+    $duplicates = 0;
+    $withdrawns = 0;
+    $whitespaces = 0;
+    while (TRUE) {
+        $match = parse_line_hotfix($callsigns->pipe,'/^([*\/0-9A-Z]*)([ \t]*)(VOIMAS(SA)?|VARAUS|KARENSSI)\t\r$/');
+        if ($match === FALSE) break; // All callsigns processed in a commit
+        if (is_string($match)) {
+            err("Unable to match callsign $match in $hash", 2);
+        }
+        // Call sign OG73WR has had extra space after it since
+        // 2019-12-13. Not fatal, but storing the incident.
+        if ($match[2] !== "\t") $whitespaces++;
+
+        // Many callsigns have duplicates in the daily list. For that
+        // reason we populate the list first, having precedence on
+        // call signs which are in VOIMASSA state.
+        $callsign = $match[1];
+        $state_a = @$table[$callsign];
+        $state_b = $match[3];
+        if ($state_a === "VOIMASSA" || $state_b === "VOIMAS" || $state_b === "VOIMASSA") {
+            // Voimassa (in effect) is the strongest state). Also, the
+            // ministry changed "VOIMAS" to "VOIMASSA" in 2019-12-14,
+            // this also harmonizes it.
+            $table[$callsign] = "VOIMASSA";
+        } else if ($state_a === NULL) {
+            // This is a normal case. Taking the new value.
+            $table[$callsign] = $state_b;
+        } else {
+            // If we hit here, the script needs to be expanded to
+            // handle such state transformation.
+            err("Unhandled duplicate state in $hash callsign $callsign: $state_a -> $state_b", 3);
+        }
+
+        // For statistics
+        if ($state_a !== NULL) $duplicates++;
+        if (array_key_exists('mangled', $match)) $mangles++;
+        if ($state_b === 'KARENSSI') $withdrawns++;
+    }
+    close_git($callsigns);
+
+    // Wildcard duplicate detection. It is another fault in the
+    // original data when a call sign is withdrawn. Before 2019-12-13
+    // the call sign was reserved both as its full form (e.g. OH6EYA)
+    // and the wildcard form (OH*EYA). If the states are the same,
+    // then non-wildcard should not be stored.
+    foreach ($table as $callsign => &$status) {
+        $wildcard = neighbour($callsign);
+        // Do not clean a wildcard
+        if ($wildcard === $callsign) continue;
+        // Do not clean if there is no wildcard callsign or it has
+        // been already cleaned up.
+        if (!array_key_exists($wildcard, $table)) continue;
+        if ($table[$wildcard] === NULL) continue;
+
+        // If we got this far, we have an existing wildcard to examine.
+        if ($status === 'VOIMASSA') {
+            // If the call sign is active, then throw the wildcard away
+            $table[$wildcard] = NULL;
+        } else if ($status === $table[$wildcard]) {
+            // Only do it if states match, keep the wildcard one and throw this away
+            $status = NULL;
+        } else {
+            err("Invalid duplicate state in $hash callsigns $callsign is $status but $wildcard is {$table[$wildcard]}", 3);
+        }
+    }
+
+    // Now we have a cleaner data and we're ready populate the database
+    $db->exec('BEGIN');
+
+    // Mark all current events temporarily. Unmarked at the end of the
+    // transaction.
+    db_execute($mark_active_events);
+
+    $wildcard_duplicates = 0;
+    foreach ($table as $callsign => $status) {
+        // Skip if the call sign is marked as to be skipped
+        if ($status === NULL) {
+            $wildcard_duplicates++;
+            continue;
+        }
+
+        $info = [
+            'date' => $genesis ? null : $date,
+            'callsign' => $callsign,
+            'status' => $status,
+            'neighbour' => neighbour($callsign),
+        ];
+
+        // Trying to update callsign if it succeeds
+        db_execute($update_event, $info);
+        switch ($db->changes()) {
+        case 0: // Callsign state was changed
+            db_execute($insert_event, $info);
+            break;
+        case 1: // No change on callsign, just extended for this date
+            break;
+        default: // Schlecht!
+            print_r($info);
+            err("Bad state change in commit $hash",3);
+        }
+    }
+
+    // Incident clean-up
+    if ($withdrawns === 0) {
+        // Anomaly in data between 2019-12-13 and 2019-12-21 when
+        // KARENSSI and VARAUS were completely missing. Filling the
+        // gap with a best guess (=no changes during the period).
+        db_execute($anomaly_bridge);
+        $bridged = $db->changes();
+    } else if ($hash === 'b3eb1095da9466af79503d39c72fdf89f6fab123') {
+        // A bad back to the office day at Traficom after a refreshing
+        // Christmas holiday in 2020-01-06 resulted in a tragicomic
+        // erasure of many long timers from the callsign
+        // database. This fix hides the trails.
+        db_execute($anomaly2_bridge);
+        $bridged = $db->changes();
+    } else {
+        $bridged = 0;
+    }
+
+    // Unmark expiring events
+    db_execute($unmark_old_events, ['prev_date' => $prev_date]);
+
+    // Processing of a commit is ready. Updating commit pointer and
+    // finishing transaction!
+    db_execute($insert_end_commit, [$hash, $date]);
+    $db->exec('END');
+
+    print("OK".
+          report("mangles",$mangles).
+          report("duplicates",$duplicates).
+          report("gap fills",$bridged).
+          report("wildcard duplicates", $wildcard_duplicates).
+          report("whitespaces", $whitespaces).
+          "\n");
+
+    $prev_date = $date;
+}
+
+close_git($commits);
+printf("Complete!\n");
+
+// Produces non-empty string with a value if the value is non-zero.
+function report($name, $value) {
+    if ($value === 0) return '';
+    return ", $name: $value";
+}   
+
+// Fixes some problems Traficom and its predecessor Ficora had in
+// their data.
+function parse_line_hotfix($p, $r) {
+    $ret = parse_line($p, $r);
+    if (is_string($ret)) {
+        // Between 2016-08-03 and 2017-03-03 call sign OH2EYY had
+        // extra newline. Also, between 2019-04-09 and 2019-12-14 call
+        // sign OG73WR had similar problem.  This hotfix handles it.
+        $head = rtrim($ret, "\n\r");
+        $out = parse_line($p, $r, $head);
+        if (is_array($out)) {
+            $out['mangled'] = TRUE;
+            return $out;
+        } else {
+            return $ret.$out;
+        }
+    } else {
+        return $ret;
+    }
+}

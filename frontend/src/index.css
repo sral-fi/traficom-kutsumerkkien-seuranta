@@ -48,6 +48,7 @@ body {
   background: var(--bg); color: var(--text);
   font-family: var(--ui); font-size: 16px;
   min-height: 100vh; padding-bottom: 60px;
+  overflow-x: hidden;
 }
 body::before {
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
@@ -70,9 +71,9 @@ header h1 {
   letter-spacing: .1em; text-shadow: 0 0 18px rgba(45,255,176,.5);
   display: block; margin-bottom: 4px;
 }
-.hdr-right { text-align: right; flex-shrink: 0; }
+.hdr-right { text-align: right; flex-shrink: 0; max-width: 45%; }
 .hdr-right span { font-family: var(--mono); font-size: .62rem; color: var(--dim);
-                  display: block; white-space: nowrap; }
+                  display: block; }
 
 /* ── KPI row ── */
 .kpi-row {
@@ -213,7 +214,7 @@ header h1 {
 .view-toggle button + button { border-left: 1px solid var(--border); }
 
 /* ── Charts ── */
-.chart-wrap { position: relative; height: 200px; }
+.chart-wrap { position: relative; height: 170px; }
 
 /* ── Changes table ── */
 .changes-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
@@ -260,23 +261,52 @@ td.dt { color: var(--dim); font-size: .68rem; }
 .dot-anim::after { content: ''; animation: dots 1.2s steps(4,end) infinite; }
 @keyframes dots { 0%{content:''} 25%{content:'.'} 50%{content:'..'} 75%{content:'...'} }
 
+/* ── Extra-small phones (< 400px) ── */
+@media (max-width: 399px) {
+  .sral-logo { height: 36px; }
+  header h1 { font-size: .68rem; }
+  .hdr-prefix { font-size: 1rem; }
+  .kpi-value { font-size: 1.4rem; }
+  .tabs button { padding: 4px 7px; font-size: .65rem; }
+  .chart-wrap { height: 145px; }
+  .daily-status { grid-template-columns: 1fr; }
+  .sr-label { min-width: 90px; }
+}
+
+/* ── Tablet / large phone (480px – 699px) ── */
+@media (min-width: 480px) {
+  .kpi-row { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .kpi:first-child { grid-column: auto; }
+  .chart-wrap { height: 210px; }
+  .ds-list { max-height: 180px; }
+}
+
 /* ── Desktop overrides (≥ 700px) ── */
 @media (min-width: 700px) {
   header { padding: 20px 32px; gap: 0; flex-direction: row; align-items: center; }
   .hdr-top { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+  .hdr-right { max-width: none; }
+  .hdr-right span { white-space: nowrap; }
   header h1 { font-size: .9rem; }
   .hdr-prefix { font-size: 1.4rem !important; display: inline !important; margin-bottom: 0; margin-right: 6px; }
-  .hdr-right span { white-space: nowrap; }
   .kpi-row { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
   .kpi:first-child { grid-column: auto; }
   .kpi { padding: 18px 24px; }
   .kpi-value { font-size: 2rem; }
   .main { margin: 28px auto; padding: 0 20px; gap: 20px; }
   .card { padding: 22px; }
-  .chart-wrap { height: 250px; }
+  .chart-wrap { height: 260px; }
   .changes-grid { grid-template-columns: 1fr 1fr; }
   .scroll-table { max-height: 320px; }
   .ds-list { max-height: 200px; }
+}
+
+/* ── Large desktop (≥ 1024px) ── */
+@media (min-width: 1024px) {
+  .chart-wrap { height: 320px; }
+  .main { padding: 0 32px; gap: 24px; }
+  .scroll-table { max-height: 380px; }
+  .ds-list { max-height: 240px; }
 }
 
 /* ── Language + theme controls ───────────────────────────────────────────── */
